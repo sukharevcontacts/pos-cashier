@@ -2422,6 +2422,9 @@ function App() {
                 className="bigInput"
                 placeholder="№ П/С, телефон или номер заказа"
                 value={searchQuery}
+                inputMode="decimal"
+                autoComplete="off"
+                enterKeyHint="search"
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') searchUser()

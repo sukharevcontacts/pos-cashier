@@ -1268,3 +1268,16 @@ body,
 .storeSelectScreen {
   overscroll-behavior-y: contain;
 }
+
+
+/* Убираем стрелки у числового поля поиска пайщика/заказа в Chrome */
+.bigInput[type="number"]::-webkit-outer-spin-button,
+.bigInput[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.bigInput[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
