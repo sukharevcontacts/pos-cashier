@@ -347,6 +347,22 @@ function App() {
     }
   }, [screenProfile])
 
+  useEffect(() => {
+    const state = { posCashierBackGuard: true }
+
+    window.history.pushState(state, '', window.location.href)
+
+    function handlePopState() {
+      window.history.pushState(state, '', window.location.href)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
   async function loadCashierSettings(cashierAccountValue: number) {
     try {
       const res = await fetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
