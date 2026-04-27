@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
@@ -229,6 +229,7 @@ function App() {
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
   const [settingsSaving, setSettingsSaving] = useState(false)
+  const lastTopbarTapAt = useRef(0)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
@@ -346,6 +347,42 @@ function App() {
       delete document.body.dataset.screenProfile
     }
   }, [screenProfile])
+
+  async function requestAppFullscreen() {
+    const root = document.documentElement as any
+
+    if (document.fullscreenElement) {
+      return
+    }
+
+    try {
+      if (root.requestFullscreen) {
+        await root.requestFullscreen({ navigationUI: 'hide' })
+      } else if (root.webkitRequestFullscreen) {
+        root.webkitRequestFullscreen()
+      }
+    } catch {
+      // Chrome может отказать во fullscreen, если жест не распознан как пользовательское действие.
+    }
+  }
+
+  function handleTopbarPointerUp(e: any) {
+    const target = e.target as HTMLElement | null
+
+    if (target?.closest('button, input, select, textarea, a')) {
+      return
+    }
+
+    const now = Date.now()
+
+    if (now - lastTopbarTapAt.current < 450) {
+      lastTopbarTapAt.current = 0
+      requestAppFullscreen()
+      return
+    }
+
+    lastTopbarTapAt.current = now
+  }
 
   useEffect(() => {
     const state = { posCashierBackGuard: true }
@@ -1590,7 +1627,7 @@ function App() {
 
     return (
       <div className="app">
-        <header className="topbar orderTopbar">
+        <header className="topbar orderTopbar" onPointerUp={handleTopbarPointerUp}>
           <div className="topbarLeft">
             <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
               ☰
@@ -1659,7 +1696,11 @@ function App() {
                 </div>
 
                 {orderDetails.lines.map((line) => (
-                  <button className="lineRow" key={line.order_line_id} onClick={() => openQtyDialog(line)}>
+                  <button
+                    className={line.item_type === 'weight' ? 'lineRow weightLineRow' : 'lineRow'}
+                    key={line.order_line_id}
+                    onClick={() => openQtyDialog(line)}
+                  >
                     <span>
                       <b>{line.item_name}</b>
                       <small>
@@ -2027,7 +2068,7 @@ function App() {
 
     return (
       <div className="app">
-        <header className="topbar">
+        <header className="topbar" onPointerUp={handleTopbarPointerUp}>
           <div className="topbarLeft">
             <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
               ☰

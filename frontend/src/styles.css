@@ -1333,3 +1333,40 @@ body[data-screen-profile="tablet_10"] .confirmDialog {
 body[data-screen-profile="tablet_10"] .confirmDialogBody {
   font-size: 16px;
 }
+
+
+/* Двойной тап по зеленой шапке для fullscreen */
+.topbar {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+
+/* Выделение весовых товаров в заказе */
+.weightLineRow {
+  background: #fff3cd;
+  border-color: #d69e00;
+  box-shadow: inset 7px 0 0 #d69e00;
+}
+
+.weightLineRow:hover {
+  background: #ffe8a3;
+  border-color: #b77900;
+}
+
+.weightLineRow b {
+  color: #3d2b00;
+}
+
+.weightLineRow small {
+  color: #6b4e00;
+}
+
+
+
+body[data-screen-profile="tablet_10"] .weightLineRow {
+  box-shadow: inset 6px 0 0 #d69e00;
+}
