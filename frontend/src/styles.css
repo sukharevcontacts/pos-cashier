@@ -1250,3 +1250,21 @@ body[data-screen-profile="tablet_10"] .orderTopbar {
   top: 0;
   z-index: 80;
 }
+
+
+/* Запрещаем случайное обновление страницы жестом вниз в Chrome на планшетах */
+html,
+body,
+#root {
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  overscroll-behavior: none;
+}
+
+/* Дополнительно запрещаем передачу прокрутки наружу из основных экранов кассы */
+.cashierScreen,
+.orderScreen,
+.loginScreen,
+.storeSelectScreen {
+  overscroll-behavior-y: contain;
+}
