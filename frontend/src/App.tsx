@@ -272,6 +272,7 @@ function App() {
 
 
   const [orderDetails, setOrderDetails] = useState<OrderDetailsResponse | null>(null)
+  const [deleteOrderDialog, setDeleteOrderDialog] = useState<FoundOrder | null>(null)
   const [orderLoading, setOrderLoading] = useState(false)
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const [receiptLoading, setReceiptLoading] = useState(false)
@@ -918,7 +919,6 @@ function App() {
       return
     }
 
-    if (!confirm(`Удалить заказ № ${order.order_number}?`)) return
 
     setError('')
     setSearchLoading(true)
@@ -951,6 +951,7 @@ function App() {
       setError(e.message || 'Ошибка удаления заказа')
     } finally {
       setSearchLoading(false)
+      setDeleteOrderDialog(null)
     }
   }
 
@@ -2051,6 +2052,53 @@ function App() {
 
         {renderSideMenu()}
 
+        {deleteOrderDialog && (
+          <div className="qtyOverlay">
+            <div className="confirmDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Удалить заказ?</h2>
+                  <p className="muted">Заказ № {deleteOrderDialog.order_number}</p>
+                </div>
+                <button
+                  className="secondary"
+                  onClick={() => setDeleteOrderDialog(null)}
+                  disabled={searchLoading}
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="confirmDialogBody">
+                <p>
+                  Заказ будет удален, а зарезервированные товары вернутся в доступный остаток.
+                </p>
+                <div className="confirmDialogSummary">
+                  <span>Сумма заказа</span>
+                  <b>{formatMoney(deleteOrderDialog.order_sum)}</b>
+                </div>
+              </div>
+
+              <div className="confirmDialogActions">
+                <button
+                  className="secondary"
+                  onClick={() => setDeleteOrderDialog(null)}
+                  disabled={searchLoading}
+                >
+                  Отмена
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => deleteOrderFromList(deleteOrderDialog)}
+                  disabled={searchLoading}
+                >
+                  {searchLoading ? 'Удаляем...' : 'Удалить заказ'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {stockViewDialogOpen && (
           <div className="itemPickerOverlay">
             <div className="itemPicker">
@@ -2577,7 +2625,7 @@ function App() {
                         className="deleteOrderButton"
                         onClick={(e) => {
                           e.stopPropagation()
-                          deleteOrderFromList(order)
+                          setDeleteOrderDialog(order)
                         }}
                       >
                         Удалить

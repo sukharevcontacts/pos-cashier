@@ -1281,3 +1281,55 @@ body,
   appearance: textfield;
   -moz-appearance: textfield;
 }
+
+
+/* Модальное подтверждение удаления заказа */
+.confirmDialog {
+  width: min(560px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
+}
+
+.confirmDialogBody {
+  padding-top: 18px;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.confirmDialogSummary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #f7f7f7;
+}
+
+.confirmDialogSummary span {
+  color: #666;
+}
+
+.confirmDialogSummary b {
+  font-size: 22px;
+}
+
+.confirmDialogActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+body[data-screen-profile="tablet_10"] .confirmDialog {
+  width: min(520px, 100%);
+  padding: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .confirmDialogBody {
+  font-size: 16px;
+}
