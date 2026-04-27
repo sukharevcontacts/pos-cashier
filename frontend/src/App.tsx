@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import './styles.css'
 
+type ScreenProfile = 'auto' | 'tablet_10'
+
+type CashierSettings = {
+  cashier_account: number
+  screen_profile: ScreenProfile
+  appearance_theme: string
+  settings_json: Record<string, unknown>
+}
+
 type Store = {
   store_id: number
   store_name: string
@@ -217,6 +226,9 @@ function App() {
   const [cashier, setCashier] = useState<Cashier | null>(null)
   const [stores, setStores] = useState<Store[]>([])
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
+  const [sideMenuOpen, setSideMenuOpen] = useState(false)
+  const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
+  const [settingsSaving, setSettingsSaving] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
@@ -326,6 +338,114 @@ function App() {
   const [sbpMessage, setSbpMessage] = useState('')
   const [sbpLoading, setSbpLoading] = useState(false)
 
+  useEffect(() => {
+    document.body.dataset.screenProfile = screenProfile
+
+    return () => {
+      delete document.body.dataset.screenProfile
+    }
+  }, [screenProfile])
+
+  async function loadCashierSettings(cashierAccountValue: number) {
+    try {
+      const res = await fetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
+
+      if (!res.ok) {
+        throw new Error('Не удалось загрузить настройки кассира')
+      }
+
+      const data: CashierSettings = await res.json()
+      setScreenProfile(data.screen_profile === 'tablet_10' ? 'tablet_10' : 'auto')
+    } catch {
+      setScreenProfile('auto')
+    }
+  }
+
+  async function saveScreenProfile(nextProfile: ScreenProfile) {
+    setScreenProfile(nextProfile)
+
+    if (!cashier) {
+      return
+    }
+
+    setSettingsSaving(true)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/settings/${cashier.cashier_account}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          screen_profile: nextProfile,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось сохранить настройки внешнего вида')
+      }
+    } catch (e: any) {
+      setError(e.message || 'Ошибка сохранения настроек')
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  function renderSideMenu() {
+    if (!cashier) return null
+
+    return (
+      <>
+        {sideMenuOpen && (
+          <button
+            className="sideMenuBackdrop"
+            aria-label="Закрыть меню"
+            onClick={() => setSideMenuOpen(false)}
+          />
+        )}
+
+        <aside className={sideMenuOpen ? 'sideMenu open' : 'sideMenu'}>
+          <div className="sideMenuHeader">
+            <div>
+              <b>Меню кассы</b>
+              <span>Кассир {cashier.cashier_account}</span>
+            </div>
+            <button className="secondary menuCloseButton" onClick={() => setSideMenuOpen(false)}>
+              ×
+            </button>
+          </div>
+
+          <div className="sideMenuSection">
+            <span className="sideMenuCaption">Настройки</span>
+            <b>Внешний вид</b>
+            <label htmlFor="screen-profile-select">Адаптация под экран</label>
+            <select
+              id="screen-profile-select"
+              value={screenProfile}
+              onChange={(e) => saveScreenProfile(e.target.value as ScreenProfile)}
+              disabled={settingsSaving}
+            >
+              <option value="auto">Авто</option>
+              <option value="tablet_10">Планшет 10 дюймов</option>
+            </select>
+            <p className="sideMenuHint">
+              Настройка сохраняется для текущего кассира и применяется сразу.
+            </p>
+          </div>
+
+          <div className="sideMenuSection">
+            <button className="secondary full" onClick={switchStore} disabled={!selectedStore}>
+              Сменить ТВТ
+            </button>
+            <button className="secondary full" onClick={logoutCashier}>
+              Выйти
+            </button>
+          </div>
+        </aside>
+      </>
+    )
+  }
+
   async function login() {
     setError('')
     setLoading(true)
@@ -350,6 +470,7 @@ function App() {
       setSessionId(data.session_id)
       setCashier(data.cashier)
       setStores(data.stores)
+      await loadCashierSettings(data.cashier.cashier_account)
     } catch (e: any) {
       setError(e.message || 'Ошибка входа')
     } finally {
@@ -1453,16 +1574,23 @@ function App() {
     return (
       <div className="app">
         <header className="topbar">
-          <div>
-            <div className="title">Заказ № {order.order_number}</div>
-            <div className="subtitle">
-              Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+          <div className="topbarLeft">
+            <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
+              ☰
+            </button>
+            <div>
+              <div className="title">Заказ № {order.order_number}</div>
+              <div className="subtitle">
+                Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+              </div>
             </div>
           </div>
           <button className="secondary" onClick={closeOrderScreen}>
             Назад к пайщику
           </button>
         </header>
+
+        {renderSideMenu()}
 
         <main className="orderScreen">
           <section className="orderMain">
@@ -1883,10 +2011,15 @@ function App() {
     return (
       <div className="app">
         <header className="topbar">
-          <div>
-            <div className="title">Пайщик</div>
-            <div className="subtitle">
-              Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+          <div className="topbarLeft">
+            <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
+              ☰
+            </button>
+            <div>
+              <div className="title">Пайщик</div>
+              <div className="subtitle">
+                Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+              </div>
             </div>
           </div>
           <div className="topbarActions">
@@ -1915,6 +2048,8 @@ function App() {
             </button>
           </div>
         </header>
+
+        {renderSideMenu()}
 
         {stockViewDialogOpen && (
           <div className="itemPickerOverlay">

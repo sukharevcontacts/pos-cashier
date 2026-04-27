@@ -953,3 +953,285 @@ button:disabled {
   justify-content: center;
   flex: 0 0 auto;
 }
+
+
+/* Меню и пользовательская адаптация экрана */
+.topbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.menuButton {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 25px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menuButton:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.sideMenuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  padding: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.sideMenu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  width: min(360px, 88vw);
+  height: 100vh;
+  padding: 18px;
+  background: #fff;
+  color: #1f1f1f;
+  box-shadow: 12px 0 35px rgba(0, 0, 0, 0.28);
+  transform: translateX(-105%);
+  transition: transform 0.18s ease;
+  overflow: auto;
+}
+
+.sideMenu.open {
+  transform: translateX(0);
+}
+
+.sideMenuHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ddd;
+}
+
+.sideMenuHeader b,
+.sideMenuHeader span {
+  display: block;
+}
+
+.sideMenuHeader b {
+  font-size: 22px;
+}
+
+.sideMenuHeader span {
+  margin-top: 4px;
+  color: #666;
+}
+
+.menuCloseButton {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.sideMenuSection {
+  display: grid;
+  gap: 10px;
+  padding: 18px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.sideMenuCaption {
+  color: #666;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sideMenuSection label {
+  margin: 6px 0 0;
+}
+
+.sideMenuSection select {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid #bbb;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 17px;
+}
+
+.sideMenuHint {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+body[data-screen-profile="tablet_10"] {
+  font-size: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .topbar {
+  height: 58px;
+  padding: 0 12px;
+}
+
+body[data-screen-profile="tablet_10"] .topbarLeft {
+  gap: 9px;
+}
+
+body[data-screen-profile="tablet_10"] .menuButton {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  font-size: 22px;
+  border-radius: 9px;
+}
+
+body[data-screen-profile="tablet_10"] .title {
+  font-size: 20px;
+}
+
+body[data-screen-profile="tablet_10"] .subtitle {
+  font-size: 12px;
+  max-width: 440px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-screen-profile="tablet_10"] .topbarActions {
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .topbarActions button,
+body[data-screen-profile="tablet_10"] .topbar > button.secondary {
+  height: 38px;
+  min-height: 38px;
+  max-height: 38px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body[data-screen-profile="tablet_10"] input,
+body[data-screen-profile="tablet_10"] select {
+  padding: 11px 12px;
+  font-size: 17px;
+}
+
+body[data-screen-profile="tablet_10"] button {
+  padding: 11px 13px;
+  border-radius: 9px;
+}
+
+body[data-screen-profile="tablet_10"] .cashierScreen {
+  grid-template-columns: 1.15fr 1fr;
+  gap: 12px;
+  padding: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .leftPanel,
+body[data-screen-profile="tablet_10"] .rightPanel,
+body[data-screen-profile="tablet_10"] .orderMain {
+  padding: 14px;
+  border-radius: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .avatarBox {
+  padding: 4px 0 10px;
+}
+
+body[data-screen-profile="tablet_10"] .avatarCircle {
+  width: 96px;
+  height: 96px;
+  font-size: 48px;
+}
+
+body[data-screen-profile="tablet_10"] .searchRow {
+  grid-template-columns: 1fr 118px 105px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .bigInput {
+  font-size: 19px;
+}
+
+body[data-screen-profile="tablet_10"] .infoGrid {
+  gap: 8px;
+  margin-top: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .bottomActions {
+  grid-template-columns: 1fr 122px 84px 124px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .balanceStrip {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .ordersHeader h2 {
+  font-size: 21px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCard,
+body[data-screen-profile="tablet_10"] .stockViewRow,
+body[data-screen-profile="tablet_10"] .txRow {
+  padding: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen {
+  padding: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .orderTop,
+body[data-screen-profile="tablet_10"] .orderSummary,
+body[data-screen-profile="tablet_10"] .quickAddRow,
+body[data-screen-profile="tablet_10"] .orderActions {
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  body[data-screen-profile="auto"] .topbar {
+    height: auto;
+    min-height: 62px;
+    padding: 8px 12px;
+    gap: 10px;
+  }
+
+  body[data-screen-profile="auto"] .topbarActions {
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  body[data-screen-profile="auto"] .topbarActions button {
+    height: 38px;
+    min-height: 38px;
+    max-height: 38px;
+    padding: 0 10px;
+    font-size: 13px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body[data-screen-profile="auto"] .cashierScreen {
+    grid-template-columns: 1fr;
+  }
+}

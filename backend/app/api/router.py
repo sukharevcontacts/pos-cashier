@@ -12,6 +12,7 @@ from app.api import (
     topup,
     stock,
     transactions,
+    cashier_settings,
 )
 
 
@@ -28,3 +29,4 @@ api_router.include_router(order_receipt.router)
 api_router.include_router(topup.router)
 api_router.include_router(stock.router)
 api_router.include_router(transactions.router)
+api_router.include_router(cashier_settings.router)
