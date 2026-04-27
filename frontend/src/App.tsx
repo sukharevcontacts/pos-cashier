@@ -1,0 +1,2525 @@
+import { useEffect, useState } from 'react'
+import './styles.css'
+
+type Store = {
+  store_id: number
+  store_name: string
+  store_address: string | null
+  owner_account: number | null
+  owner_balance: number | null
+}
+
+type Cashier = {
+  cashier_account: number
+  user_fam: string | null
+  user_name: string | null
+  user_otch: string | null
+}
+
+type LoginResponse = {
+  ok: boolean
+  session_id: string
+  cashier: Cashier
+  stores: Store[]
+}
+
+type FoundUser = {
+  user_account: number
+  user_phone: string | null
+  user_name: string | null
+  user_fam: string | null
+  user_otch: string | null
+  balance: number
+  photo_url: string | null
+}
+
+type FoundOrder = {
+  order_number: number
+  status: string
+  status_label: string
+  delivery_date: string | null
+  date_updated: string
+  order_sum: number
+}
+
+type SearchResponse = {
+  ok: boolean
+  store: {
+    store_id: number
+    owner_account: number
+    owner_balance: number
+    cash_balance: number
+    cash_limit: number
+  }
+  user: FoundUser
+  orders: FoundOrder[]
+}
+
+type UserTransactionRow = {
+  line_id: number
+  transaction_id: string
+  transaction_type: string
+  transaction_type_label: string
+  status: string
+  cashier_account: number | null
+  store_id: number | null
+  owner_account: number | null
+  order_number: number | null
+  transaction_amount: number
+  amount_delta: number
+  line_type: string
+  line_type_label: string
+  balance_before: number
+  balance_after: number
+  created_at: string
+  comment: string | null
+}
+
+type OrderLine = {
+  order_line_id: number
+  item: number
+  item_name: string
+  photo_url: string | null
+  item_type: 'piece' | 'weight'
+  avg_weight: number | null
+  pack: string | null
+  qty: number
+  price: number
+  qty_final: number
+  line_sum: number
+  item_stock: number
+  reserve: number
+  available_qty: number
+  max_qty_final: number
+}
+
+type StoreItem = {
+  item: number
+  item_name: string
+  item_category: string | null
+  item_subcategory: string | null
+  photo_url: string | null
+  item_type: 'piece' | 'weight'
+  avg_weight: number | null
+  pack: string | null
+  price: number
+  item_stock: number
+  reserve: number
+  available_qty: number
+}
+
+type ItemCategoryGroup = {
+  category: string
+  items_count: number
+  subcategories: {
+    subcategory: string
+    items_count: number
+  }[]
+}
+
+type OrderDetailsResponse = {
+  ok: boolean
+  readonly: boolean
+  order: {
+    order_number: number
+    user_account: number
+    store_id: number
+    status: string
+    status_label: string
+    order_sum: number
+    user_phone: string | null
+    user_name: string | null
+    user_fam: string | null
+    user_otch: string | null
+    user_balance: number
+    user_photo_url: string | null
+  }
+  store: {
+    store_id: number
+    owner_account: number
+    owner_balance: number
+    cash_balance: number
+    cash_limit: number
+  }
+  lines: OrderLine[]
+}
+
+type OrderReceiptResponse = {
+  ok: boolean
+  store: {
+    store_id: number
+    store_name: string
+    store_address: string | null
+    owner_account: number | null
+  }
+  order: {
+    order_number: number
+    user_account: number
+    store_id: number
+    status: string
+    status_label: string
+    order_sum: number
+    user_phone: string | null
+    user_fam: string | null
+    user_name: string | null
+    user_otch: string | null
+    date_updated: string
+  }
+  lines: {
+    order_line_id: number
+    item: number
+    item_name: string
+    item_type: 'piece' | 'weight'
+    pack: string | null
+    qty_final: number
+    price: number
+    line_sum: number
+  }[]
+  payment: {
+    transaction_id: string
+    amount: number
+    created_at: string
+    status: string
+  } | null
+}
+
+const API_BASE = '/pos-api'
+
+function formatMoney(value: number | string | null | undefined) {
+  const n = Number(value ?? 0)
+  return n.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function formatQty(value: number | null | undefined, itemType?: string) {
+  const n = Number(value ?? 0)
+
+  if (itemType === 'piece') {
+    return n.toLocaleString('ru-RU', {
+      maximumFractionDigits: 0,
+    })
+  }
+
+  return n.toLocaleString('ru-RU', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  })
+}
+
+function App() {
+  const [cashierAccount, setCashierAccount] = useState('1000728')
+  const [cashierPasswd, setCashierPasswd] = useState('9999')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [sessionId, setSessionId] = useState('')
+  const [cashier, setCashier] = useState<Cashier | null>(null)
+  const [stores, setStores] = useState<Store[]>([])
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null)
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [foundUser, setFoundUser] = useState<FoundUser | null>(null)
+  const [orders, setOrders] = useState<FoundOrder[]>([])
+  const [storeState, setStoreState] = useState<SearchResponse['store'] | null>(null)
+  const [txDialogOpen, setTxDialogOpen] = useState(false)
+  const [txLoading, setTxLoading] = useState(false)
+  const [txRows, setTxRows] = useState<UserTransactionRow[]>([])
+  const [selectedOrderNumber, setSelectedOrderNumber] = useState<number | null>(null)
+  const [cashTopupAmount, setCashTopupAmount] = useState('')
+  const [cashTopupLoading, setCashTopupLoading] = useState(false)
+
+  const [newUserDialogOpen, setNewUserDialogOpen] = useState(false)
+  const [newUserLoading, setNewUserLoading] = useState(false)
+  const [newUserForm, setNewUserForm] = useState({
+    user_fam: '',
+    user_name: '',
+    user_otch: '',
+    date_of_birth: '',
+    address: '',
+    email: '',
+    user_phone: '',
+  })
+
+  const [stockDialogOpen, setStockDialogOpen] = useState(false)
+  const [stockLoading, setStockLoading] = useState(false)
+  const [stockMessage, setStockMessage] = useState('')
+  const [stockForm, setStockForm] = useState({
+    item: '',
+    qty_delta: '',
+    comment: '',
+  })
+  const [stockSearchQuery, setStockSearchQuery] = useState('')
+  const [stockSearchLoading, setStockSearchLoading] = useState(false)
+  const [stockSearchItems, setStockSearchItems] = useState<StoreItem[]>([])
+  const [stockViewDialogOpen, setStockViewDialogOpen] = useState(false)
+  const [stockViewQuery, setStockViewQuery] = useState('')
+  const [stockViewLoading, setStockViewLoading] = useState(false)
+  const [stockViewItems, setStockViewItems] = useState<StoreItem[]>([])
+
+
+  const [orderDetails, setOrderDetails] = useState<OrderDetailsResponse | null>(null)
+  const [orderLoading, setOrderLoading] = useState(false)
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
+  const [receiptLoading, setReceiptLoading] = useState(false)
+  const [receiptData, setReceiptData] = useState<OrderReceiptResponse | null>(null)
+
+  useEffect(() => {
+    const currentCashier = cashier
+    const currentOrderDetails = orderDetails
+
+    if (!currentCashier || !currentOrderDetails || currentOrderDetails.order.status !== 'in_progress') {
+      return
+    }
+
+    const orderNumber = currentOrderDetails.order.order_number
+    const heartbeatCashierAccount = currentCashier.cashier_account
+
+    async function sendHeartbeat() {
+      const params = new URLSearchParams({
+        cashier_account: String(heartbeatCashierAccount),
+        session_id: sessionId,
+        device_id: 'web',
+      })
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/cashier/orders/${orderNumber}/heartbeat?${params.toString()}`,
+          { method: 'POST' }
+        )
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          setError(data?.detail || 'Блокировка заказа потеряна. Откройте заказ заново')
+        }
+      } catch {
+        setError('Не удалось продлить блокировку заказа')
+      }
+    }
+
+    const timer = window.setInterval(sendHeartbeat, 30000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [cashier, orderDetails, sessionId])
+
+  const [itemPickerOpen, setItemPickerOpen] = useState(false)
+  const [itemSearchQuery, setItemSearchQuery] = useState('')
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [quickItemCode, setQuickItemCode] = useState('')
+  const [storeItems, setStoreItems] = useState<StoreItem[]>([])
+  const [itemCategories, setItemCategories] = useState<ItemCategoryGroup[]>([])
+  const [selectedItemCategory, setSelectedItemCategory] = useState('')
+  const [selectedItemSubcategory, setSelectedItemSubcategory] = useState('')
+
+  const [qtyDialogLine, setQtyDialogLine] = useState<OrderLine | null>(null)
+  const [qtyDraft, setQtyDraft] = useState('')
+  const [qtySaving, setQtySaving] = useState(false)
+
+  const [payLoading, setPayLoading] = useState(false)
+  const [saveLoading, setSaveLoading] = useState(false)
+
+  const [sbpDialogOpen, setSbpDialogOpen] = useState(false)
+  const [sbpAmount, setSbpAmount] = useState('')
+  const [sbpMessage, setSbpMessage] = useState('')
+  const [sbpLoading, setSbpLoading] = useState(false)
+
+  async function login() {
+    setError('')
+    setLoading(true)
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: Number(cashierAccount),
+          cashier_passwd: cashierPasswd,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Ошибка входа')
+      }
+
+      const data: LoginResponse = await res.json()
+
+      setSessionId(data.session_id)
+      setCashier(data.cashier)
+      setStores(data.stores)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка входа')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function searchUser() {
+    if (!cashier || !selectedStore) return
+
+    setError('')
+    setSearchLoading(true)
+    setSelectedOrderNumber(null)
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+        q: searchQuery,
+      })
+
+      const res = await fetch(`${API_BASE}/cashier/search?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Ничего не найдено')
+      }
+
+      const data: SearchResponse = await res.json()
+
+      setFoundUser(data.user)
+      setOrders(data.orders)
+      setStoreState(data.store)
+    } catch (e: any) {
+      setFoundUser(null)
+      setOrders([])
+      setStoreState(null)
+      setError(e.message || 'Ошибка поиска')
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  async function refreshCurrentUser(keepSelectedOrderNumber?: number | null) {
+    if (!cashier || !selectedStore || !foundUser) return
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+        q: String(foundUser.user_account),
+      })
+
+      const res = await fetch(`${API_BASE}/cashier/search?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось обновить данные пайщика')
+      }
+
+      const data: SearchResponse = await res.json()
+
+      setFoundUser(data.user)
+      setOrders(data.orders)
+      setStoreState(data.store)
+
+      if (keepSelectedOrderNumber) {
+        const exists = data.orders.some((o) => o.order_number === keepSelectedOrderNumber)
+        setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
+      }
+    } catch (e: any) {
+      setError(e.message || 'Ошибка обновления данных пайщика')
+    }
+  }
+
+  function updateNewUserField(field: keyof typeof newUserForm, value: string) {
+    setNewUserForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  async function createShareholder() {
+    if (!cashier || !selectedStore) return
+
+    if (!newUserForm.user_phone.trim()) {
+      setError('Введите телефон пайщика')
+      return
+    }
+
+    setNewUserLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/users/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: cashier.cashier_account,
+          store_id: selectedStore.store_id,
+          user_phone: newUserForm.user_phone,
+          user_fam: newUserForm.user_fam,
+          user_name: newUserForm.user_name,
+          user_otch: newUserForm.user_otch,
+          date_of_birth: newUserForm.date_of_birth || null,
+          address: newUserForm.address,
+          email: newUserForm.email,
+          session_id: sessionId,
+          device_id: 'web',
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось создать пайщика')
+      }
+
+      const data = await res.json()
+
+      setFoundUser(data.user)
+      setOrders([])
+      setStoreState(data.store)
+      setSelectedOrderNumber(null)
+      setSearchQuery(String(data.user.user_account))
+      setNewUserDialogOpen(false)
+
+      setNewUserForm({
+        user_fam: '',
+        user_name: '',
+        user_otch: '',
+        date_of_birth: '',
+        address: '',
+        email: '',
+        user_phone: '',
+      })
+    } catch (e: any) {
+      setError(e.message || 'Ошибка создания пайщика')
+    } finally {
+      setNewUserLoading(false)
+    }
+  }
+
+  function updateStockField(field: keyof typeof stockForm, value: string) {
+    setStockForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  async function loadStockSearchItems(query = stockSearchQuery) {
+    if (!cashier || !selectedStore) return
+
+    setStockSearchLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+        limit: '30',
+      })
+
+      if (query.trim()) {
+        params.set('q', query.trim())
+      }
+
+      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось найти товары')
+      }
+
+      const data = await res.json()
+      setStockSearchItems(data.items || [])
+    } catch (e: any) {
+      setStockSearchItems([])
+      setError(e.message || 'Ошибка поиска товара')
+    } finally {
+      setStockSearchLoading(false)
+    }
+  }
+
+  function selectStockItem(item: StoreItem) {
+    updateStockField('item', String(item.item))
+    setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
+  }
+
+  async function loadStockViewItems(query = stockViewQuery) {
+    if (!cashier || !selectedStore) return
+
+    const currentCashier = cashier
+    const currentStore = selectedStore
+
+    setStockViewLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(currentCashier.cashier_account),
+        store_id: String(currentStore.store_id),
+        limit: '150',
+      })
+
+      if (query.trim()) {
+        params.set('q', query.trim())
+      }
+
+      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось загрузить остатки')
+      }
+
+      const data = await res.json()
+      setStockViewItems(data.items || [])
+    } catch (e: any) {
+      setStockViewItems([])
+      setError(e.message || 'Ошибка загрузки остатков')
+    } finally {
+      setStockViewLoading(false)
+    }
+  }
+
+  async function openStockViewDialog() {
+    setStockViewDialogOpen(true)
+    setStockViewQuery('')
+    setError('')
+    await loadStockViewItems('')
+  }
+
+  async function stockReceipt() {
+    if (!cashier || !selectedStore) return
+
+    const itemCode = Number(stockForm.item)
+    const qtyDelta = Number(stockForm.qty_delta)
+
+    if (!itemCode || itemCode <= 0) {
+      setError('Введите корректный код товара')
+      return
+    }
+
+    if (!qtyDelta || qtyDelta <= 0) {
+      setError('Введите количество прихода')
+      return
+    }
+
+    setStockLoading(true)
+    setError('')
+    setStockMessage('')
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/stock/receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: cashier.cashier_account,
+          store_id: selectedStore.store_id,
+          item: itemCode,
+          qty_delta: qtyDelta,
+          comment: stockForm.comment,
+          session_id: sessionId,
+          device_id: 'web',
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось оприходовать товар')
+      }
+
+      const data = await res.json()
+
+      setStockMessage(
+        `Оприходовано: ${data.item_name}. Остаток: ${formatQty(data.item_stock_before, data.item_type)} → ${formatQty(data.item_stock_after, data.item_type)}`
+      )
+
+      setStockForm((prev) => ({
+        ...prev,
+        qty_delta: '',
+        comment: '',
+      }))
+    } catch (e: any) {
+      setError(e.message || 'Ошибка прихода товара')
+    } finally {
+      setStockLoading(false)
+    }
+  }
+
+  async function openTransactionsDialog() {
+    if (!cashier || !selectedStore || !foundUser) {
+      setError('Сначала найдите пайщика')
+      return
+    }
+
+    setTxDialogOpen(true)
+    setTxLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+        limit: '80',
+      })
+
+      const res = await fetch(
+        `${API_BASE}/cashier/users/${foundUser.user_account}/transactions?${params.toString()}`
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось загрузить историю П/С')
+      }
+
+      const data = await res.json()
+      setTxRows(data.transactions || [])
+    } catch (e: any) {
+      setTxRows([])
+      setError(e.message || 'Ошибка загрузки истории П/С')
+    } finally {
+      setTxLoading(false)
+    }
+  }
+
+  async function cashTopup() {
+    if (!cashier || !selectedStore || !foundUser) {
+      setError('Сначала найдите пайщика')
+      return
+    }
+
+    const amount = Number(cashTopupAmount)
+
+    if (!amount || amount <= 0) {
+      setError('Введите сумму пополнения')
+      return
+    }
+
+    if (!confirm(`Пополнить П/С пайщика на ${formatMoney(amount)} наличными?`)) return
+
+    setCashTopupLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/topup/cash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: cashier.cashier_account,
+          store_id: selectedStore.store_id,
+          user_account: foundUser.user_account,
+          amount,
+          session_id: sessionId,
+          device_id: 'web',
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось пополнить П/С')
+      }
+
+      const data = await res.json()
+
+      setFoundUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              balance: data.user_balance_after,
+            }
+          : prev
+      )
+
+      setStoreState((prev) =>
+        prev
+          ? {
+              ...prev,
+              owner_balance: data.owner_balance_after,
+              cash_balance: data.cash_balance_after,
+              cash_limit: data.cash_limit,
+            }
+          : {
+              store_id: selectedStore.store_id,
+              owner_account: data.owner_account,
+              owner_balance: data.owner_balance_after,
+              cash_balance: data.cash_balance_after,
+              cash_limit: data.cash_limit,
+            }
+      )
+
+      setCashTopupAmount('')
+    } catch (e: any) {
+      setError(e.message || 'Ошибка пополнения')
+    } finally {
+      setCashTopupLoading(false)
+    }
+  }
+
+  async function createOrder() {
+    if (!cashier || !selectedStore || !foundUser) {
+      setError('Сначала найдите пайщика')
+      return
+    }
+
+    setError('')
+    setSearchLoading(true)
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/orders/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: cashier.cashier_account,
+          store_id: selectedStore.store_id,
+          user_account: foundUser.user_account,
+          session_id: sessionId,
+          device_id: 'web',
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось создать заказ')
+      }
+
+      const data = await res.json()
+      const newOrder = data.order as FoundOrder
+
+      setOrders((prev) => [newOrder, ...prev])
+      setSelectedOrderNumber(newOrder.order_number)
+      await refreshCurrentUser(newOrder.order_number)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка создания заказа')
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  async function deleteOrderFromList(order: FoundOrder) {
+    if (!cashier || !selectedStore) return
+
+    if (order.status !== 'in_progress') {
+      setError('Удалить можно только заказ в статусе Передан на выполнение')
+      return
+    }
+
+    if (!confirm(`Удалить заказ № ${order.order_number}?`)) return
+
+    setError('')
+    setSearchLoading(true)
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/orders/${order.order_number}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: cashier.cashier_account,
+          store_id: selectedStore.store_id,
+          session_id: sessionId,
+          device_id: 'web',
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось удалить заказ')
+      }
+
+      setOrders((prev) => prev.filter((o) => o.order_number !== order.order_number))
+
+      if (selectedOrderNumber === order.order_number) {
+        setSelectedOrderNumber(null)
+      }
+
+      await refreshCurrentUser(null)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка удаления заказа')
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  async function openOrder(orderNumber: number) {
+    if (!cashier || !selectedStore) return
+
+    setError('')
+    setOrderLoading(true)
+    setSelectedOrderNumber(orderNumber)
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+        session_id: sessionId,
+        device_id: 'web',
+      })
+
+      const res = await fetch(`${API_BASE}/cashier/orders/${orderNumber}?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось открыть заказ')
+      }
+
+      const data: OrderDetailsResponse = await res.json()
+      setOrderDetails(data)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка открытия заказа')
+    } finally {
+      setOrderLoading(false)
+    }
+  }
+
+  async function openReceipt(orderNumber?: number) {
+    if (!cashier || !selectedStore) return
+
+    const targetOrderNumber = orderNumber ?? orderDetails?.order.order_number
+
+    if (!targetOrderNumber) {
+      setError('Заказ не выбран')
+      return
+    }
+
+    setReceiptDialogOpen(true)
+    setReceiptLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+      })
+
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${targetOrderNumber}/receipt?${params.toString()}`
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось загрузить чек')
+      }
+
+      const data: OrderReceiptResponse = await res.json()
+      setReceiptData(data)
+    } catch (e: any) {
+      setReceiptData(null)
+      setError(e.message || 'Ошибка загрузки чека')
+    } finally {
+      setReceiptLoading(false)
+    }
+  }
+
+  async function closeOrderScreen() {
+    if (cashier && orderDetails && orderDetails.order.status === 'in_progress') {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        session_id: sessionId,
+        device_id: 'web',
+      })
+
+      await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/unlock?${params.toString()}`,
+        { method: 'POST' }
+      ).catch(() => null)
+    }
+
+    const keepOrderNumber = orderDetails?.order.order_number ?? null
+    setOrderDetails(null)
+    await refreshCurrentUser(keepOrderNumber)
+  }
+
+  async function unlockCurrentOrderIfNeeded() {
+    const currentCashier = cashier
+    const currentOrderDetails = orderDetails
+
+    if (!currentCashier || !currentOrderDetails || currentOrderDetails.order.status !== 'in_progress') {
+      return
+    }
+
+    const params = new URLSearchParams({
+      cashier_account: String(currentCashier.cashier_account),
+      session_id: sessionId,
+      device_id: 'web',
+    })
+
+    await fetch(
+      `${API_BASE}/cashier/orders/${currentOrderDetails.order.order_number}/unlock?${params.toString()}`,
+      { method: 'POST' }
+    ).catch(() => null)
+  }
+
+  function clearWorkplaceState() {
+    setSelectedStore(null)
+    setSearchQuery('')
+    setFoundUser(null)
+    setOrders([])
+    setStoreState(null)
+    setSelectedOrderNumber(null)
+    setOrderDetails(null)
+    setError('')
+
+    setCashTopupAmount('')
+
+    setItemPickerOpen(false)
+    setItemSearchQuery('')
+    setStoreItems([])
+    setItemCategories([])
+    setSelectedItemCategory('')
+    setSelectedItemSubcategory('')
+    setQuickItemCode('')
+
+    setQtyDialogLine(null)
+    setQtyDraft('')
+
+    setSbpDialogOpen(false)
+    setSbpAmount('')
+    setSbpMessage('')
+
+    setNewUserDialogOpen(false)
+    setNewUserForm({
+      user_fam: '',
+      user_name: '',
+      user_otch: '',
+      date_of_birth: '',
+      address: '',
+      email: '',
+      user_phone: '',
+    })
+
+    setStockDialogOpen(false)
+    setStockMessage('')
+    setStockForm({
+      item: '',
+      qty_delta: '',
+      comment: '',
+    })
+    setStockSearchQuery('')
+    setStockSearchItems([])
+
+    setStockViewDialogOpen(false)
+    setStockViewQuery('')
+    setStockViewItems([])
+  }
+
+  async function switchStore() {
+    await unlockCurrentOrderIfNeeded()
+    clearWorkplaceState()
+  }
+
+  async function logoutCashier() {
+    await unlockCurrentOrderIfNeeded()
+    clearWorkplaceState()
+
+    setCashier(null)
+    setStores([])
+    setSessionId('')
+    setCashierPasswd('')
+  }
+
+  async function saveOrder() {
+    if (!cashier || !selectedStore || !orderDetails) return
+
+    setSaveLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/save`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cashier_account: cashier.cashier_account,
+            store_id: selectedStore.store_id,
+            session_id: sessionId,
+            device_id: 'web',
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось сохранить заказ')
+      }
+
+      const saved = await res.json()
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.order_number === saved.order_number
+            ? {
+                ...o,
+                status: saved.status,
+                status_label: saved.status_label,
+                order_sum: saved.order_sum,
+              }
+            : o
+        )
+      )
+
+      setOrderDetails(null)
+      await refreshCurrentUser(saved.order_number)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка сохранения заказа')
+    } finally {
+      setSaveLoading(false)
+    }
+  }
+
+  async function loadStoreItems(
+    query = itemSearchQuery,
+    category = selectedItemCategory,
+    subcategory = selectedItemSubcategory
+  ) {
+    if (!cashier || !selectedStore) return
+
+    setItemsLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+        limit: '100',
+      })
+
+      if (query.trim()) {
+        params.set('q', query.trim())
+      }
+
+      if (category.trim()) {
+        params.set('category', category.trim())
+      }
+
+      if (subcategory.trim()) {
+        params.set('subcategory', subcategory.trim())
+      }
+
+      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось загрузить товары')
+      }
+
+      const data = await res.json()
+      setStoreItems(data.items || [])
+    } catch (e: any) {
+      setStoreItems([])
+      setError(e.message || 'Ошибка загрузки товаров')
+    } finally {
+      setItemsLoading(false)
+    }
+  }
+
+  async function loadItemCategories() {
+    if (!cashier || !selectedStore) return
+
+    try {
+      const params = new URLSearchParams({
+        cashier_account: String(cashier.cashier_account),
+        store_id: String(selectedStore.store_id),
+      })
+
+      const res = await fetch(`${API_BASE}/cashier/items/categories?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось загрузить категории')
+      }
+
+      const data = await res.json()
+      setItemCategories(data.categories || [])
+    } catch (e: any) {
+      setItemCategories([])
+      setError(e.message || 'Ошибка загрузки категорий')
+    }
+  }
+
+  async function openItemPicker() {
+    setItemPickerOpen(true)
+    setItemSearchQuery('')
+    setSelectedItemCategory('')
+    setSelectedItemSubcategory('')
+    await loadItemCategories()
+    await loadStoreItems('', '', '')
+  }
+
+  async function addItemToCurrentOrder(item: StoreItem) {
+    if (!cashier || !selectedStore || !orderDetails) return
+
+    setItemsLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cashier_account: cashier.cashier_account,
+            store_id: selectedStore.store_id,
+            item: item.item,
+            session_id: sessionId,
+            device_id: 'web',
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось добавить товар')
+      }
+
+      await openOrder(orderDetails.order.order_number)
+      await loadStoreItems(itemSearchQuery)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка добавления товара')
+    } finally {
+      setItemsLoading(false)
+    }
+  }
+
+  async function addItemByCode() {
+    if (!cashier || !selectedStore || !orderDetails) return
+
+    const itemCode = Number(quickItemCode.trim())
+
+    if (!itemCode || itemCode <= 0) {
+      setError('Введите корректный код товара')
+      return
+    }
+
+    setItemsLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cashier_account: cashier.cashier_account,
+            store_id: selectedStore.store_id,
+            item: itemCode,
+            session_id: sessionId,
+            device_id: 'web',
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось добавить товар по коду')
+      }
+
+      const orderNumber = orderDetails.order.order_number
+      setQuickItemCode('')
+      await openOrder(orderNumber)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка добавления товара по коду')
+    } finally {
+      setItemsLoading(false)
+    }
+  }
+
+  async function handleAddButton() {
+    if (quickItemCode.trim()) {
+      await addItemByCode()
+    } else {
+      await openItemPicker()
+    }
+  }
+
+  function openQtyDialog(line: OrderLine) {
+    if (!orderDetails || orderDetails.readonly) return
+
+    setQtyDialogLine(line)
+    setQtyDraft(String(line.qty_final))
+  }
+
+  function changeQtyDraft(delta: number) {
+    if (!qtyDialogLine) return
+
+    const current = Number(qtyDraft || 0)
+    const step = qtyDialogLine.item_type === 'piece' ? 1 : 0.001
+    const next = Math.max(0, current + delta * step)
+
+    if (qtyDialogLine.item_type === 'piece') {
+      setQtyDraft(String(Math.round(next)))
+    } else {
+      setQtyDraft(next.toFixed(3))
+    }
+  }
+
+  async function saveQtyDraft() {
+    if (!cashier || !selectedStore || !orderDetails || !qtyDialogLine) return
+
+    setQtySaving(true)
+    setError('')
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/lines/${qtyDialogLine.order_line_id}/qty`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cashier_account: cashier.cashier_account,
+            store_id: selectedStore.store_id,
+            qty_final: Number(qtyDraft),
+            session_id: sessionId,
+            device_id: 'web',
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось изменить количество')
+      }
+
+      const orderNumber = orderDetails.order.order_number
+      setQtyDialogLine(null)
+      await openOrder(orderNumber)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка изменения количества')
+    } finally {
+      setQtySaving(false)
+    }
+  }
+
+  async function deleteQtyLine() {
+    if (!cashier || !selectedStore || !orderDetails || !qtyDialogLine) return
+
+    if (!confirm('Удалить товар из заказа?')) return
+
+    setQtySaving(true)
+    setError('')
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/lines/${qtyDialogLine.order_line_id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cashier_account: cashier.cashier_account,
+            store_id: selectedStore.store_id,
+            session_id: sessionId,
+            device_id: 'web',
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось удалить товар')
+      }
+
+      const orderNumber = orderDetails.order.order_number
+      setQtyDialogLine(null)
+      await openOrder(orderNumber)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка удаления товара')
+    } finally {
+      setQtySaving(false)
+    }
+  }
+
+  async function payOrder() {
+    if (!cashier || !selectedStore || !orderDetails) return
+
+    if (!confirm('Оплатить заказ и перевести его в статус Выполнен?')) return
+
+    setPayLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/pay`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cashier_account: cashier.cashier_account,
+            store_id: selectedStore.store_id,
+            session_id: sessionId,
+            device_id: 'web',
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось оплатить заказ')
+      }
+
+      const paid = await res.json()
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.order_number === paid.order_number
+            ? {
+                ...o,
+                status: 'done',
+                status_label: 'Выполнен',
+                order_sum: paid.amount,
+                date_updated: new Date().toISOString(),
+              }
+            : o
+        )
+      )
+
+      await refreshCurrentUser(paid.order_number)
+      await openOrder(orderDetails.order.order_number)
+    } catch (e: any) {
+      const message = e.message || 'Ошибка оплаты заказа'
+
+      if (message.includes('Недостаточно паев') && orderDetails) {
+        const deficit = Math.max(
+          0,
+          Number(orderDetails.order.order_sum || 0) - Number(orderDetails.order.user_balance || 0)
+        )
+
+        setSbpAmount(deficit.toFixed(2))
+        setSbpMessage(message)
+        setSbpDialogOpen(true)
+      }
+
+      setError(message)
+    } finally {
+      setPayLoading(false)
+    }
+  }
+
+  async function sbpTopupStub() {
+    if (!cashier || !selectedStore) return
+
+    const targetUserAccount = orderDetails?.order.user_account ?? foundUser?.user_account
+
+    if (!targetUserAccount) {
+      setError('Сначала найдите пайщика')
+      return
+    }
+
+    setSbpLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/cashier/topup/sbp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cashier_account: cashier.cashier_account,
+          store_id: selectedStore.store_id,
+          user_account: targetUserAccount,
+          amount: Number(sbpAmount),
+          session_id: sessionId,
+          device_id: 'web',
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось пополнить П/С')
+      }
+
+      const data = await res.json()
+
+      setSbpDialogOpen(false)
+      setSbpMessage('')
+
+      if (orderDetails) {
+        await openOrder(orderDetails.order.order_number)
+      } else {
+        setFoundUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                balance: data.user_balance_after,
+              }
+            : prev
+        )
+      }
+    } catch (e: any) {
+      setError(e.message || 'Ошибка СБП-пополнения')
+    } finally {
+      setSbpLoading(false)
+    }
+  }
+
+
+  if (selectedStore && cashier && orderDetails) {
+    const order = orderDetails.order
+    const fio = `${order.user_fam ?? ''} ${order.user_name ?? ''} ${order.user_otch ?? ''}`.trim()
+
+    return (
+      <div className="app">
+        <header className="topbar">
+          <div>
+            <div className="title">Заказ № {order.order_number}</div>
+            <div className="subtitle">
+              Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+            </div>
+          </div>
+          <button className="secondary" onClick={closeOrderScreen}>
+            Назад к пайщику
+          </button>
+        </header>
+
+        <main className="orderScreen">
+          <section className="orderMain">
+            <div className="orderTop">
+              <div>
+                <h2>{fio || `Пайщик ${order.user_account}`}</h2>
+                <p className="muted">
+                  П/С: {order.user_account} · Телефон: {order.user_phone ?? '—'}
+                </p>
+              </div>
+              <div className="orderStatusBox">
+                <span>{order.status_label}</span>
+                <b>{formatMoney(order.order_sum)}</b>
+              </div>
+            </div>
+
+            <div className="orderSummary">
+              <div>
+                <span>Баланс пайщика</span>
+                <b>{formatMoney(order.user_balance)}</b>
+              </div>
+              <div>
+                <span>П/С владельца ТВТ</span>
+                <b>{formatMoney(orderDetails.store.owner_balance)}</b>
+              </div>
+              <div>
+                <span>Нал. в кассе</span>
+                <b>{formatMoney(orderDetails.store.cash_balance)}</b>
+              </div>
+              <div>
+                <span>Лимит</span>
+                <b>{formatMoney(orderDetails.store.cash_limit)}</b>
+              </div>
+            </div>
+
+            {error && <div className="error">{error}</div>}
+
+            {orderDetails.lines.length === 0 ? (
+              <div className="emptyOrder">
+                В заказе пока нет товаров
+              </div>
+            ) : (
+              <div className="linesTable">
+                <div className="lineHeader">
+                  <span>Товар</span>
+                  <span>Кол-во</span>
+                  <span>Цена</span>
+                  <span>Сумма</span>
+                </div>
+
+                {orderDetails.lines.map((line) => (
+                  <button className="lineRow" key={line.order_line_id} onClick={() => openQtyDialog(line)}>
+                    <span>
+                      <b>{line.item_name}</b>
+                      <small>
+                        Код {line.item} · {line.item_type === 'weight' ? `Весовой, ${line.pack ?? 'кг'}` : 'Штучный'}
+                      </small>
+                    </span>
+                    <span>{formatQty(line.qty_final, line.item_type)}</span>
+                    <span>{formatMoney(line.price)}</span>
+                    <span>{formatMoney(line.line_sum)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="quickAddRow">
+              <label>Код товара</label>
+              <input
+                value={quickItemCode}
+                onChange={(e) => setQuickItemCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAddButton()
+                  }
+                }}
+                inputMode="numeric"
+                placeholder="Введите код товара или оставьте пустым для выбора"
+                disabled={orderDetails.readonly}
+              />
+              <button className="primary" onClick={handleAddButton} disabled={orderDetails.readonly || itemsLoading}>
+                {quickItemCode.trim() ? 'Добавить по коду' : 'Выбрать товар'}
+              </button>
+            </div>
+
+            <div className="orderActions">
+              <button className="secondary" onClick={closeOrderScreen}>
+                Назад
+              </button>
+              <button className="primary" disabled={orderDetails.readonly || itemsLoading} onClick={handleAddButton}>
+                {itemsLoading && quickItemCode.trim() ? 'Добавляем...' : 'Добавить'}
+              </button>
+              <button
+                className="secondary"
+                onClick={saveOrder}
+                disabled={orderDetails.readonly || saveLoading}
+              >
+                {saveLoading ? 'Сохраняем...' : 'Сохранить'}
+              </button>
+              <button
+                className="primary"
+                onClick={payOrder}
+                disabled={orderDetails.readonly || orderDetails.lines.length === 0 || payLoading}
+              >
+                {payLoading ? 'Оплачиваем...' : 'Оплатить'}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => openReceipt(orderDetails.order.order_number)}
+                disabled={orderDetails.lines.length === 0}
+              >
+                Чек
+              </button>
+            </div>
+
+            {sbpDialogOpen && (
+              <div className="qtyOverlay">
+                <div className="qtyDialog">
+                  <div className="qtyDialogHeader">
+                    <div>
+                      <h2>Пополнение П/С через СБП</h2>
+                      <p className="muted">Заглушка: сумма будет зачислена на П/С пайщика с технического счета 9999999</p>
+                    </div>
+                    <button className="secondary" onClick={() => setSbpDialogOpen(false)}>
+                      Закрыть
+                    </button>
+                  </div>
+
+                  <div className="qtyDialogBody">
+                    {sbpMessage && <div className="notice">{sbpMessage}</div>}
+
+                    <label>Сумма пополнения</label>
+                    <input
+                      value={sbpAmount}
+                      onChange={(e) => setSbpAmount(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                    />
+
+                    {error && <div className="error">{error}</div>}
+
+                    <div className="qtyActions">
+                      <button className="secondary" onClick={() => setSbpDialogOpen(false)} disabled={sbpLoading}>
+                        Отмена
+                      </button>
+                      <button className="primary" onClick={sbpTopupStub} disabled={sbpLoading || Number(sbpAmount) <= 0}>
+                        {sbpLoading ? 'Пополняем...' : 'Пополнить'}
+                      </button>
+                      <button className="primary" onClick={payOrder} disabled={sbpLoading || payLoading}>
+                        Снова оплатить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {receiptDialogOpen && (
+              <div className="itemPickerOverlay">
+                <div className="receiptDialog">
+                  <div className="itemPickerHeader">
+                    <div>
+                      <h2>Чек заказа</h2>
+                      <p className="muted">
+                        {receiptData ? `Заказ № ${receiptData.order.order_number}` : 'Загрузка...'}
+                      </p>
+                    </div>
+                    <button className="secondary" onClick={() => setReceiptDialogOpen(false)}>
+                      Закрыть
+                    </button>
+                  </div>
+
+                  {error && <div className="error">{error}</div>}
+
+                  {receiptLoading && <div className="emptyBox">Загружаем чек...</div>}
+
+                  {!receiptLoading && receiptData && (
+                    <div className="receiptBody">
+                      <div className="receiptHead">
+                        <b>Коопторгъ</b>
+                        <span>ТВТ: {receiptData.store.store_name}</span>
+                        <span>Пайщик: {receiptData.order.user_account}</span>
+                        <span>Статус: {receiptData.order.status_label}</span>
+                        {receiptData.payment ? (
+                          <span>Оплата: {new Date(receiptData.payment.created_at).toLocaleString('ru-RU')}</span>
+                        ) : (
+                          <span>Оплата: не проведена</span>
+                        )}
+                      </div>
+
+                      <div className="receiptLines">
+                        {receiptData.lines.map((line) => (
+                          <div className="receiptLine" key={line.order_line_id}>
+                            <div>
+                              <b>{line.item_name}</b>
+                              <span>Код {line.item}</span>
+                            </div>
+                            <div>{formatQty(line.qty_final, line.item_type)}</div>
+                            <div>{formatMoney(line.price)}</div>
+                            <div>{formatMoney(line.line_sum)}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="receiptTotal">
+                        <span>Итого</span>
+                        <b>{formatMoney(receiptData.order.order_sum)}</b>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {qtyDialogLine && (
+              <div className="qtyOverlay">
+                <div className="qtyDialog">
+                  <div className="qtyDialogHeader">
+                    <h2>Выберите количество товара</h2>
+                    <button className="secondary" onClick={() => setQtyDialogLine(null)}>
+                      Отмена
+                    </button>
+                  </div>
+
+                  <div className="qtyDialogBody">
+                    <div className="qtyProduct">
+                      <div className="qtyPhoto">
+                        {qtyDialogLine.photo_url ? (
+                          <img src={qtyDialogLine.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+
+                      <div>
+                        <b>{qtyDialogLine.item_name}</b>
+                        <p className="muted">
+                          Код {qtyDialogLine.item} · {qtyDialogLine.item_type === 'weight' ? `Весовой, ${qtyDialogLine.pack ?? 'кг'}` : 'Штучный'}
+                        </p>
+                        <p className="muted">
+                          Максимум: {formatQty(qtyDialogLine.max_qty_final, qtyDialogLine.item_type)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="qtyControl">
+                      <button className="primary qtyBtn" onClick={() => changeQtyDraft(-1)} disabled={qtySaving}>
+                        -
+                      </button>
+                      <input
+                        value={qtyDraft}
+                        onChange={(e) => setQtyDraft(e.target.value)}
+                        inputMode="decimal"
+                      />
+                      <button className="primary qtyBtn" onClick={() => changeQtyDraft(1)} disabled={qtySaving}>
+                        +
+                      </button>
+                    </div>
+
+                    <div className="qtySum">
+                      Сумма: <b>{formatMoney(Number(qtyDraft || 0) * qtyDialogLine.price)}</b>
+                    </div>
+
+                    {error && <div className="error">{error}</div>}
+
+                    <div className="qtyActions">
+                      <button className="danger" onClick={deleteQtyLine} disabled={qtySaving}>
+                        Удалить
+                      </button>
+                      <button className="secondary" onClick={() => setQtyDialogLine(null)} disabled={qtySaving}>
+                        Отмена
+                      </button>
+                      <button className="primary" onClick={saveQtyDraft} disabled={qtySaving}>
+                        ОК
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {itemPickerOpen && (
+              <div className="itemPickerOverlay">
+                <div className="itemPicker">
+                  <div className="itemPickerHeader">
+                    <div>
+                      <h2>Добавить товар</h2>
+                      <p className="muted">Поиск по коду товара, названию, категории или подкатегории</p>
+                    </div>
+                    <button className="secondary" onClick={() => setItemPickerOpen(false)}>
+                      Закрыть
+                    </button>
+                  </div>
+
+                  <div className="itemSearchRow">
+                    <input
+                      placeholder="Введите код или название товара"
+                      value={itemSearchQuery}
+                      onChange={(e) => setItemSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)
+                        }
+                      }}
+                    />
+                    <button
+                      className="primary"
+                      onClick={() => loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)}
+                      disabled={itemsLoading}
+                    >
+                      {itemsLoading ? 'Ищем...' : 'Найти'}
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setItemSearchQuery('')
+                        setSelectedItemCategory('')
+                        setSelectedItemSubcategory('')
+                        loadStoreItems('', '', '')
+                      }}
+                    >
+                      Все
+                    </button>
+                  </div>
+
+                  <div className="categoryPickers">
+                    <select
+                      value={selectedItemCategory}
+                      onChange={(e) => {
+                        const category = e.target.value
+                        setSelectedItemCategory(category)
+                        setSelectedItemSubcategory('')
+                        loadStoreItems(itemSearchQuery, category, '')
+                      }}
+                    >
+                      <option value="">Все категории</option>
+                      {itemCategories.map((cat) => (
+                        <option key={cat.category} value={cat.category}>
+                          {cat.category} ({cat.items_count})
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={selectedItemSubcategory}
+                      disabled={!selectedItemCategory}
+                      onChange={(e) => {
+                        const subcategory = e.target.value
+                        setSelectedItemSubcategory(subcategory)
+                        loadStoreItems(itemSearchQuery, selectedItemCategory, subcategory)
+                      }}
+                    >
+                      <option value="">Все подкатегории</option>
+                      {(itemCategories.find((cat) => cat.category === selectedItemCategory)?.subcategories || []).map((sub) => (
+                        <option key={sub.subcategory} value={sub.subcategory}>
+                          {sub.subcategory} ({sub.items_count})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {error && <div className="error">{error}</div>}
+
+                  <div className="itemList">
+                    {storeItems.length === 0 && (
+                      <div className="emptyBox">Товары не найдены</div>
+                    )}
+
+                    {storeItems.map((item) => (
+                      <button
+                        key={item.item}
+                        className="itemCard"
+                        onClick={() => addItemToCurrentOrder(item)}
+                        disabled={itemsLoading || item.available_qty <= 0}
+                      >
+                        <div className="itemPhoto">
+                          {item.photo_url ? (
+                            <img src={item.photo_url} alt="" />
+                          ) : (
+                            <span>📦</span>
+                          )}
+                        </div>
+
+                        <div className="itemInfo">
+                          <b>{item.item_name}</b>
+                          <span>
+                            Код {item.item} · {item.item_category || 'Без категории'}
+                          </span>
+                          <span>
+                            {item.item_type === 'weight'
+                              ? `Весовой · средний вес ${formatQty(item.avg_weight, 'weight')} кг · ${item.pack || 'кг'}`
+                              : 'Штучный товар'}
+                          </span>
+                        </div>
+
+                        <div className="itemNumbers">
+                          <b>{formatMoney(item.price)}</b>
+                          <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
+                          <span>Резерв: {formatQty(item.reserve, item.item_type)}</span>
+                          <span>Доступно: {formatQty(item.available_qty, item.item_type)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+    )
+  }
+
+  if (selectedStore && cashier) {
+    const activeOrder = orders.find((o) => o.order_number === selectedOrderNumber)
+    const total = activeOrder?.order_sum ?? 0
+
+    return (
+      <div className="app">
+        <header className="topbar">
+          <div>
+            <div className="title">Пайщик</div>
+            <div className="subtitle">
+              Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+            </div>
+          </div>
+          <div className="topbarActions">
+            <button className="secondary" onClick={openStockViewDialog}>
+              Остатки
+            </button>
+            <button
+              className="secondary"
+              onClick={() => {
+                setStockDialogOpen(true)
+                setStockMessage('')
+                setError('')
+                loadStockSearchItems('')
+              }}
+            >
+              Приход
+            </button>
+            <button className="secondary" onClick={() => setNewUserDialogOpen(true)}>
+              Анкета
+            </button>
+            <button className="secondary" onClick={switchStore}>
+              Сменить ТВТ
+            </button>
+            <button className="secondary" onClick={logoutCashier}>
+              Выйти
+            </button>
+          </div>
+        </header>
+
+        {stockViewDialogOpen && (
+          <div className="itemPickerOverlay">
+            <div className="itemPicker">
+              <div className="itemPickerHeader">
+                <div>
+                  <h2>Остатки на ТВТ</h2>
+                  <p className="muted">Текущий остаток, резерв и доступное количество товара</p>
+                </div>
+                <button className="secondary" onClick={() => setStockViewDialogOpen(false)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="stockViewSearchRow">
+                <input
+                  value={stockViewQuery}
+                  onChange={(e) => setStockViewQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      loadStockViewItems(stockViewQuery)
+                    }
+                  }}
+                  placeholder="Код, название, категория или подкатегория"
+                />
+                <button
+                  className="primary"
+                  onClick={() => loadStockViewItems(stockViewQuery)}
+                  disabled={stockViewLoading}
+                >
+                  {stockViewLoading ? 'Ищем...' : 'Найти'}
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setStockViewQuery('')
+                    loadStockViewItems('')
+                  }}
+                >
+                  Все
+                </button>
+              </div>
+
+              {error && <div className="error">{error}</div>}
+
+              <div className="stockViewTable">
+                <div className="stockViewHeader">
+                  <span>Товар</span>
+                  <span>Цена</span>
+                  <span>Остаток</span>
+                  <span>Резерв</span>
+                  <span>Доступно</span>
+                </div>
+
+                {stockViewItems.length === 0 && (
+                  <div className="emptyBox">Товары не найдены</div>
+                )}
+
+                {stockViewItems.map((item) => (
+                  <div className="stockViewRow" key={item.item}>
+                    <div>
+                      <b>{item.item_name}</b>
+                      <span>
+                        Код {item.item} · {item.item_category || 'Без категории'} · {item.item_subcategory || 'Без подкатегории'}
+                      </span>
+                    </div>
+                    <div>{formatMoney(item.price)}</div>
+                    <div>{formatQty(item.item_stock, item.item_type)}</div>
+                    <div>{formatQty(item.reserve, item.item_type)}</div>
+                    <div>
+                      <b>{formatQty(item.available_qty, item.item_type)}</b>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {stockDialogOpen && (
+          <div className="qtyOverlay">
+            <div className="newUserDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Приход товара на ТВТ</h2>
+                  <p className="muted">Остаток товара увеличится на выбранной точке выдачи</p>
+                </div>
+                <button className="secondary" onClick={() => setStockDialogOpen(false)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="stockForm">
+                <label>Код товара</label>
+                <input
+                  value={stockForm.item}
+                  onChange={(e) => updateStockField('item', e.target.value)}
+                  placeholder="Например 2811"
+                  inputMode="numeric"
+                />
+
+                <label>Количество прихода</label>
+                <input
+                  value={stockForm.qty_delta}
+                  onChange={(e) => updateStockField('qty_delta', e.target.value)}
+                  placeholder="Например 1 или 1.250"
+                  inputMode="decimal"
+                />
+
+                <div className="stockSearchBlock stockFull">
+                  <label>Поиск товара</label>
+                  <div className="stockSearchRow">
+                    <input
+                      value={stockSearchQuery}
+                      onChange={(e) => setStockSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          loadStockSearchItems(stockSearchQuery)
+                        }
+                      }}
+                      placeholder="Введите код, название, категорию или подкатегорию"
+                    />
+                    <button
+                      className="primary"
+                      onClick={() => loadStockSearchItems(stockSearchQuery)}
+                      disabled={stockSearchLoading}
+                    >
+                      {stockSearchLoading ? 'Ищем...' : 'Найти'}
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setStockSearchQuery('')
+                        loadStockSearchItems('')
+                      }}
+                    >
+                      Все
+                    </button>
+                  </div>
+
+                  <div className="stockSearchResults">
+                    {stockSearchItems.map((item) => (
+                      <button
+                        key={item.item}
+                        className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                        onClick={() => selectStockItem(item)}
+                      >
+                        <div>
+                          <b>{item.item_name}</b>
+                          <span>Код {item.item} · {item.item_category || 'Без категории'}</span>
+                        </div>
+                        <div>
+                          <b>{formatMoney(item.price)}</b>
+                          <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
+                        </div>
+                      </button>
+                    ))}
+
+                    {stockSearchItems.length === 0 && (
+                      <div className="emptyBox">Товары не найдены</div>
+                    )}
+                  </div>
+                </div>
+
+                <label className="stockFull">Комментарий</label>
+                <input
+                  className="stockFull"
+                  value={stockForm.comment}
+                  onChange={(e) => updateStockField('comment', e.target.value)}
+                  placeholder="Комментарий к приходу"
+                />
+              </div>
+
+              {stockMessage && <div className="notice">{stockMessage}</div>}
+              {error && <div className="error">{error}</div>}
+
+              <div className="newUserActions">
+                <button className="secondary" onClick={() => setStockDialogOpen(false)} disabled={stockLoading}>
+                  Закрыть
+                </button>
+                <button className="primary" onClick={stockReceipt} disabled={stockLoading}>
+                  {stockLoading ? 'Оприходуем...' : 'Оприходовать'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {newUserDialogOpen && (
+          <div className="qtyOverlay">
+            <div className="newUserDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Анкета нового пайщика</h2>
+                  <p className="muted">После сохранения новый пайщик сразу откроется в кассе</p>
+                </div>
+                <button className="secondary" onClick={() => setNewUserDialogOpen(false)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="newUserForm">
+                <label>Фамилия</label>
+                <input
+                  value={newUserForm.user_fam}
+                  onChange={(e) => updateNewUserField('user_fam', e.target.value)}
+                  placeholder="Фамилия"
+                />
+
+                <label>Имя</label>
+                <input
+                  value={newUserForm.user_name}
+                  onChange={(e) => updateNewUserField('user_name', e.target.value)}
+                  placeholder="Имя"
+                />
+
+                <label>Отчество</label>
+                <input
+                  value={newUserForm.user_otch}
+                  onChange={(e) => updateNewUserField('user_otch', e.target.value)}
+                  placeholder="Отчество"
+                />
+
+                <label>Телефон</label>
+                <input
+                  value={newUserForm.user_phone}
+                  onChange={(e) => updateNewUserField('user_phone', e.target.value)}
+                  placeholder="79130000000"
+                  inputMode="tel"
+                />
+
+                <label>Дата рождения</label>
+                <input
+                  value={newUserForm.date_of_birth}
+                  onChange={(e) => updateNewUserField('date_of_birth', e.target.value)}
+                  type="date"
+                />
+
+                <label>Email</label>
+                <input
+                  value={newUserForm.email}
+                  onChange={(e) => updateNewUserField('email', e.target.value)}
+                  placeholder="email@example.ru"
+                />
+
+                <label className="newUserFull">Адрес</label>
+                <input
+                  className="newUserFull"
+                  value={newUserForm.address}
+                  onChange={(e) => updateNewUserField('address', e.target.value)}
+                  placeholder="Адрес проживания"
+                />
+              </div>
+
+              {error && <div className="error">{error}</div>}
+
+              <div className="newUserActions">
+                <button className="secondary" onClick={() => setNewUserDialogOpen(false)} disabled={newUserLoading}>
+                  Отмена
+                </button>
+                <button className="primary" onClick={createShareholder} disabled={newUserLoading}>
+                  {newUserLoading ? 'Сохраняем...' : 'Сохранить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {txDialogOpen && (
+          <div className="itemPickerOverlay">
+            <div className="itemPicker">
+              <div className="itemPickerHeader">
+                <div>
+                  <h2>История П/С</h2>
+                  <p className="muted">
+                    Пайщик: {foundUser?.user_account ?? '—'}
+                  </p>
+                </div>
+                <button className="secondary" onClick={() => setTxDialogOpen(false)}>
+                  Закрыть
+                </button>
+              </div>
+
+              {error && <div className="error">{error}</div>}
+
+              {txLoading ? (
+                <div className="emptyBox">Загружаем историю...</div>
+              ) : (
+                <div className="txTable">
+                  <div className="txHeader">
+                    <span>Дата</span>
+                    <span>Операция</span>
+                    <span>Заказ</span>
+                    <span>Изменение</span>
+                    <span>Баланс после</span>
+                  </div>
+
+                  {txRows.length === 0 && (
+                    <div className="emptyBox">Операций по П/С пока нет</div>
+                  )}
+
+                  {txRows.map((row) => (
+                    <div className={row.amount_delta >= 0 ? 'txRow plus' : 'txRow minus'} key={row.line_id}>
+                      <span>{new Date(row.created_at).toLocaleString('ru-RU')}</span>
+                      <span>
+                        <b>{row.transaction_type_label}</b>
+                        <small>{row.line_type_label}</small>
+                      </span>
+                      <span>{row.order_number ? `№ ${row.order_number}` : '—'}</span>
+                      <span>
+                        {row.amount_delta > 0 ? '+' : ''}
+                        {formatMoney(row.amount_delta)}
+                      </span>
+                      <span>{formatMoney(row.balance_after)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {sbpDialogOpen && !orderDetails && (
+          <div className="qtyOverlay">
+            <div className="qtyDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Пополнение П/С через СБП</h2>
+                  <p className="muted">Заглушка: сумма будет зачислена на П/С выбранного пайщика с технического счета 9999999</p>
+                </div>
+                <button className="secondary" onClick={() => setSbpDialogOpen(false)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="qtyDialogBody">
+                {sbpMessage && <div className="notice">{sbpMessage}</div>}
+
+                <label>Сумма пополнения</label>
+                <input
+                  value={sbpAmount}
+                  onChange={(e) => setSbpAmount(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                />
+
+                {error && <div className="error">{error}</div>}
+
+                <div className="qtyActions">
+                  <button className="secondary" onClick={() => setSbpDialogOpen(false)} disabled={sbpLoading}>
+                    Отмена
+                  </button>
+                  <button className="primary" onClick={sbpTopupStub} disabled={sbpLoading || Number(sbpAmount) <= 0}>
+                    {sbpLoading ? 'Пополняем...' : 'Пополнить'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <main className="cashierScreen">
+          <section className="leftPanel">
+            <div className="avatarBox">
+              <div className="avatarCircle">👤</div>
+            </div>
+
+            <div className="searchRow">
+              <input
+                className="bigInput"
+                placeholder="№ П/С, телефон или номер заказа"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') searchUser()
+                }}
+              />
+              <button className="primary" onClick={searchUser} disabled={searchLoading}>
+                {searchLoading ? 'Ищем...' : 'Искать'}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setSearchQuery('')
+                  setFoundUser(null)
+                  setOrders([])
+                  setStoreState(null)
+                  setSelectedOrderNumber(null)
+                  setError('')
+                }}
+              >
+                Очистить
+              </button>
+            </div>
+
+            {error && <div className="error">{error}</div>}
+            {orderLoading && <div className="notice">Открываем заказ...</div>}
+
+            <div className="infoGrid">
+              <div className="infoField">
+                <span>П/С пайщика</span>
+                <b>{foundUser?.user_account ?? '—'}</b>
+              </div>
+              <div className="infoField">
+                <span>ФИО</span>
+                <b>
+                  {foundUser
+                    ? `${foundUser.user_fam ?? ''} ${foundUser.user_name ?? ''} ${foundUser.user_otch ?? ''}`.trim()
+                    : '—'}
+                </b>
+              </div>
+              <div className="infoField">
+                <span>Телефон</span>
+                <b>{foundUser?.user_phone ?? '—'}</b>
+              </div>
+              <div className="infoField">
+                <span>Сумма на П/С</span>
+                <b>{formatMoney(foundUser?.balance)}</b>
+              </div>
+            </div>
+
+            <div className="bottomActions">
+              <div className="sumBox">
+                <label>Сумма пополнения</label>
+                <input
+                  placeholder="0.00"
+                  value={cashTopupAmount}
+                  onChange={(e) => setCashTopupAmount(e.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
+              <button
+                className="secondary"
+                onClick={cashTopup}
+                disabled={!foundUser || cashTopupLoading}
+              >
+                {cashTopupLoading ? 'Пополняем...' : 'Пополнить'}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (!foundUser) {
+                    setError('Сначала найдите пайщика')
+                    return
+                  }
+                  setSbpAmount('')
+                  setSbpMessage('СБП-заглушка для пополнения П/С пайщика')
+                  setSbpDialogOpen(true)
+                }}
+              >
+                СБП
+              </button>
+              <button
+                className="secondary"
+                onClick={openTransactionsDialog}
+                disabled={!foundUser}
+              >
+                История П/С
+              </button>
+            </div>
+          </section>
+
+          <section className="rightPanel">
+            <div className="balanceStrip">
+              <div>
+                <span>П/С владельца ТВТ</span>
+                <b>{formatMoney(storeState?.owner_balance ?? selectedStore.owner_balance)}</b>
+              </div>
+              <div>
+                <span>Нал. в кассе</span>
+                <b>{formatMoney(storeState?.cash_balance)}</b>
+              </div>
+              <div>
+                <span>Лимит</span>
+                <b>{formatMoney(storeState?.cash_limit)}</b>
+              </div>
+            </div>
+
+            <div className="ordersHeader">
+              <div>
+                <h2>Заказы пайщика</h2>
+                <button
+                  className="primary smallButton"
+                  onClick={createOrder}
+                  disabled={!foundUser || searchLoading}
+                >
+                  Создать заказ
+                </button>
+              </div>
+              <div className="totalBox">
+                Итого: <b>{formatMoney(total)}</b>
+              </div>
+            </div>
+
+            <div className="ordersList">
+              {orders.length === 0 && (
+                <div className="emptyBox">Заказы не найдены</div>
+              )}
+
+              {orders.map((order) => (
+                <div
+                  key={order.order_number}
+                  className={
+                    order.order_number === selectedOrderNumber
+                      ? 'orderCard selected'
+                      : 'orderCard'
+                  }
+                  onClick={() => openOrder(order.order_number)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div>
+                    <b>Заказ № {order.order_number}</b>
+                    <span>{order.status_label}</span>
+                  </div>
+                  <div className="orderCardRight">
+                    <b>{formatMoney(order.order_sum)}</b>
+                    <span>{order.delivery_date || 'без даты'}</span>
+
+                    {order.status === 'in_progress' && (
+                      <button
+                        className="deleteOrderButton"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteOrderFromList(order)
+                        }}
+                      >
+                        Удалить
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </main>
+      </div>
+    )
+  }
+
+  if (cashier) {
+    return (
+      <div className="app">
+        <div className="centerBox">
+          <div className="panel wide">
+            <h1>Выбор точки выдачи</h1>
+            <p className="muted">
+              Кассир: {cashier.user_fam} {cashier.user_name} {cashier.user_otch} · {cashier.cashier_account}
+            </p>
+
+            <div className="storeList">
+              {stores.map((store) => (
+                <button
+                  key={store.store_id}
+                  className="storeButton"
+                  onClick={() => setSelectedStore(store)}
+                >
+                  <span className="storeName">{store.store_name}</span>
+                  <span className="storeAddress">{store.store_address || 'Адрес не указан'}</span>
+                  <span className="storeMeta">
+                    ТВТ {store.store_id} · Владелец {store.owner_account ?? '—'}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button className="secondary full" onClick={logoutCashier}>
+              Выйти
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="app">
+      <div className="centerBox">
+        <div className="panel">
+          <h1>Касса Коопторгъ</h1>
+          <p className="muted">Вход кассира</p>
+
+          <label>Логин кассира</label>
+          <input
+            value={cashierAccount}
+            onChange={(e) => setCashierAccount(e.target.value)}
+            inputMode="numeric"
+          />
+
+          <label>Пароль</label>
+          <input
+            value={cashierPasswd}
+            onChange={(e) => setCashierPasswd(e.target.value)}
+            type="password"
+          />
+
+          {error && <div className="error">{error}</div>}
+
+          <button className="primary full" onClick={login} disabled={loading}>
+            {loading ? 'Входим...' : 'Войти'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default App
