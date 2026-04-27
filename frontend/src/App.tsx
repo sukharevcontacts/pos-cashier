@@ -329,8 +329,16 @@ function App() {
   const [selectedItemSubcategory, setSelectedItemSubcategory] = useState('')
 
   const [qtyDialogLine, setQtyDialogLine] = useState<OrderLine | null>(null)
+  const [deleteLineConfirmOpen, setDeleteLineConfirmOpen] = useState(false)
+  const [deleteLineDialogLine, setDeleteLineDialogLine] = useState<OrderLine | null>(null)
+  const [swipeAnimatingLineId, setSwipeAnimatingLineId] = useState<number | null>(null)
+  const [swipeDragLineId, setSwipeDragLineId] = useState<number | null>(null)
+  const [swipeDragX, setSwipeDragX] = useState(0)
+  const [swipeCommitX, setSwipeCommitX] = useState(0)
   const [qtyDraft, setQtyDraft] = useState('')
   const [qtySaving, setQtySaving] = useState(false)
+  const lineSwipeRef = useRef<{ lineId: number; startX: number; startY: number } | null>(null)
+  const swipedLineIdRef = useRef<number | null>(null)
 
   const [payLoading, setPayLoading] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
@@ -1424,8 +1432,129 @@ function App() {
   function openQtyDialog(line: OrderLine) {
     if (!orderDetails || orderDetails.readonly) return
 
+    setDeleteLineConfirmOpen(false)
+    setDeleteLineDialogLine(null)
+    setSwipeAnimatingLineId(null)
+        setSwipeCommitX(0)
+    setDeleteLineConfirmOpen(false)
+    setDeleteLineDialogLine(null)
+    setSwipeAnimatingLineId(null)
     setQtyDialogLine(line)
     setQtyDraft(String(line.qty_final))
+  }
+
+  function handleLinePointerDown(e: any, line: OrderLine) {
+    if (!orderDetails || orderDetails.readonly || deleteLineConfirmOpen) return
+
+    lineSwipeRef.current = {
+      lineId: line.order_line_id,
+      startX: e.clientX,
+      startY: e.clientY,
+    }
+
+    setSwipeAnimatingLineId(null)
+    setSwipeDragLineId(line.order_line_id)
+    setSwipeDragX(0)
+
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+    } catch {
+      // Pointer capture может быть недоступен на части браузеров.
+    }
+  }
+
+  function handleLinePointerMove(e: any, line: OrderLine) {
+    const swipe = lineSwipeRef.current
+
+    if (!swipe || swipe.lineId !== line.order_line_id) {
+      return
+    }
+
+    const deltaX = e.clientX - swipe.startX
+    const deltaY = e.clientY - swipe.startY
+
+    if (Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      setSwipeDragLineId(null)
+      setSwipeDragX(0)
+      lineSwipeRef.current = null
+      return
+    }
+
+    const nextX = Math.max(0, Math.min(deltaX, 170))
+    setSwipeDragX(nextX)
+
+    if (nextX > 8) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+
+  function handleLinePointerUp(e: any, line: OrderLine) {
+    const swipe = lineSwipeRef.current
+
+    if (!swipe || swipe.lineId !== line.order_line_id) {
+      setSwipeDragLineId(null)
+      setSwipeDragX(0)
+      lineSwipeRef.current = null
+      return
+    }
+
+    const deltaX = e.clientX - swipe.startX
+    const deltaY = e.clientY - swipe.startY
+
+    lineSwipeRef.current = null
+
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId)
+    } catch {
+      // Не критично.
+    }
+
+    if (deltaX > 95 && Math.abs(deltaY) < 65) {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const commitX = Math.max(0, Math.min(deltaX, 220))
+
+      swipedLineIdRef.current = line.order_line_id
+      setSwipeCommitX(commitX)
+      setSwipeDragLineId(null)
+      setSwipeDragX(0)
+      setSwipeAnimatingLineId(line.order_line_id)
+
+      window.setTimeout(() => {
+        setSwipeAnimatingLineId(null)
+      setSwipeCommitX(0)
+        setQtyDialogLine(null)
+        setDeleteLineDialogLine(line)
+        setQtyDraft(String(line.qty_final))
+        setDeleteLineConfirmOpen(true)
+      }, 260)
+
+      return
+    }
+
+    setSwipeDragLineId(null)
+    setSwipeDragX(0)
+  }
+
+  function handleLinePointerCancel() {
+    lineSwipeRef.current = null
+    setSwipeDragLineId(null)
+    setSwipeDragX(0)
+  }
+
+  function handleLineRowClick(line: OrderLine) {
+    if (swipedLineIdRef.current === line.order_line_id) {
+      swipedLineIdRef.current = null
+      return
+    }
+
+    if (deleteLineConfirmOpen) {
+      return
+    }
+
+    openQtyDialog(line)
   }
 
   function changeQtyDraft(delta: number) {
@@ -1515,16 +1644,18 @@ function App() {
   }
 
   async function deleteQtyLine() {
-    if (!cashier || !selectedStore || !orderDetails || !qtyDialogLine) return
+    const lineToDelete = deleteLineDialogLine || qtyDialogLine
 
-    if (!confirm('Удалить товар из заказа?')) return
+    if (!cashier || !selectedStore || !orderDetails || !lineToDelete) return
 
     setQtySaving(true)
     setError('')
 
     try {
+      const orderNumber = orderDetails.order.order_number
+
       const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/lines/${qtyDialogLine.order_line_id}/delete`,
+        `${API_BASE}/cashier/orders/${orderNumber}/lines/${lineToDelete.order_line_id}/delete`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1542,8 +1673,12 @@ function App() {
         throw new Error(data?.detail || 'Не удалось удалить товар')
       }
 
-      const orderNumber = orderDetails.order.order_number
+      setDeleteLineConfirmOpen(false)
+      setDeleteLineDialogLine(null)
+      setSwipeAnimatingLineId(null)
       setQtyDialogLine(null)
+      setQtyDraft('')
+
       await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка удаления товара')
@@ -1751,9 +1886,31 @@ function App() {
 
                 {orderDetails.lines.map((line) => (
                   <button
-                    className={line.item_type === 'weight' ? 'lineRow weightLineRow' : 'lineRow'}
+                    className={[
+                      'lineRow',
+                      line.item_type === 'weight' ? 'weightLineRow' : '',
+                      'swipeLineRow',
+                      swipeDragLineId === line.order_line_id ? 'swipeDragging' : '',
+                      swipeAnimatingLineId === line.order_line_id ? 'swipeDeleteAnimating' : '',
+                    ].filter(Boolean).join(' ')}
                     key={line.order_line_id}
-                    onClick={() => openQtyDialog(line)}
+                    onPointerDown={(e) => handleLinePointerDown(e, line)}
+                    onPointerUp={(e) => handleLinePointerUp(e, line)}
+                    onPointerMove={(e) => handleLinePointerMove(e, line)}
+                    onPointerCancel={handleLinePointerCancel}
+                    style={
+                      swipeDragLineId === line.order_line_id
+                        ? {
+                            transform: `translateX(${swipeDragX}px)`,
+                            opacity: Math.max(0.72, 1 - swipeDragX / 420),
+                          }
+                        : swipeAnimatingLineId === line.order_line_id
+                          ? ({
+                              '--swipe-start-x': `${swipeCommitX}px`,
+                            } as any)
+                          : undefined
+                    }
+                    onClick={() => handleLineRowClick(line)}
                   >
                     <span>
                       <b>{line.item_name}</b>
@@ -1917,7 +2074,7 @@ function App() {
               </div>
             )}
 
-            {qtyDialogLine && (
+            {qtyDialogLine && !deleteLineConfirmOpen && (
               <div className="qtyOverlay">
                 <div className="qtyDialog">
                   <div className="qtyDialogHeader">
@@ -1969,7 +2126,14 @@ function App() {
                     {error && <div className="error">{error}</div>}
 
                     <div className="qtyActions">
-                      <button className="danger" onClick={deleteQtyLine} disabled={qtySaving}>
+                      <button
+                        className="danger"
+                        onClick={() => {
+                          setDeleteLineDialogLine(qtyDialogLine)
+                          setDeleteLineConfirmOpen(true)
+                        }}
+                        disabled={qtySaving}
+                      >
                         Удалить
                       </button>
                       <button className="secondary" onClick={() => setQtyDialogLine(null)} disabled={qtySaving}>
@@ -1979,6 +2143,55 @@ function App() {
                         ОК
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {deleteLineConfirmOpen && (deleteLineDialogLine || qtyDialogLine) && (
+              <div className="qtyOverlay lineDeleteOverlay">
+                <div className="lineDeleteDialog" role="dialog" aria-modal="true">
+                  <div className="qtyDialogHeader">
+                    <div>
+                      <h2>Удалить товар?</h2>
+                      <p className="muted">{(deleteLineDialogLine || qtyDialogLine)!.item_name}</p>
+                    </div>
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setDeleteLineConfirmOpen(false)
+                        setDeleteLineDialogLine(null)
+      setSwipeAnimatingLineId(null)
+                      }}
+                      disabled={qtySaving}
+                    >
+                      Закрыть
+                    </button>
+                  </div>
+
+                  <div className="lineDeleteBody">
+                    <p>Товар будет удален из заказа, а резерв по этой позиции вернется в доступный остаток.</p>
+                    <div className="lineDeleteSummary">
+                      <span>Количество</span>
+                      <b>{formatQty((deleteLineDialogLine || qtyDialogLine)!.qty_final, (deleteLineDialogLine || qtyDialogLine)!.item_type)}</b>
+                    </div>
+                  </div>
+
+                  <div className="lineDeleteActions">
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setDeleteLineConfirmOpen(false)
+                        setDeleteLineDialogLine(null)
+      setSwipeAnimatingLineId(null)
+                      }}
+                      disabled={qtySaving}
+                    >
+                      Отмена
+                    </button>
+                    <button className="danger" onClick={deleteQtyLine} disabled={qtySaving}>
+                      {qtySaving ? 'Удаляем...' : 'Удалить товар'}
+                    </button>
                   </div>
                 </div>
               </div>
