@@ -1031,7 +1031,10 @@ function App() {
       }
 
       const data: OrderDetailsResponse = await res.json()
-      setOrderDetails(data)
+      setOrderDetails({
+        ...data,
+        lines: (data.lines || []).filter((line) => Number(line.qty_final || 0) > 0),
+      })
     } catch (e: any) {
       setError(e.message || 'Ошибка открытия заказа')
     } finally {
@@ -1426,19 +1429,54 @@ function App() {
   async function saveQtyDraft() {
     if (!cashier || !selectedStore || !orderDetails || !qtyDialogLine) return
 
+    const nextQty = Number(qtyDraft)
+
+    if (!Number.isFinite(nextQty) || nextQty < 0) {
+      setError('Введите корректное количество')
+      return
+    }
+
     setQtySaving(true)
     setError('')
 
     try {
+      const orderNumber = orderDetails.order.order_number
+
+      if (nextQty <= 0) {
+        const res = await fetch(
+          `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/delete`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cashier_account: cashier.cashier_account,
+              store_id: selectedStore.store_id,
+              session_id: sessionId,
+              device_id: 'web',
+            }),
+          }
+        )
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          throw new Error(data?.detail || 'Не удалось удалить товар')
+        }
+
+        setQtyDialogLine(null)
+        setQtyDraft('')
+        await openOrder(orderNumber)
+        return
+      }
+
       const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/lines/${qtyDialogLine.order_line_id}/qty`,
+        `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/qty`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
-            qty_final: Number(qtyDraft),
+            qty_final: nextQty,
             session_id: sessionId,
             device_id: 'web',
           }),
@@ -1450,8 +1488,8 @@ function App() {
         throw new Error(data?.detail || 'Не удалось изменить количество')
       }
 
-      const orderNumber = orderDetails.order.order_number
       setQtyDialogLine(null)
+      setQtyDraft('')
       await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка изменения количества')
