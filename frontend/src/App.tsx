@@ -1573,7 +1573,7 @@ function App() {
 
     return (
       <div className="app">
-        <header className="topbar">
+        <header className="topbar orderTopbar">
           <div className="topbarLeft">
             <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
               ☰

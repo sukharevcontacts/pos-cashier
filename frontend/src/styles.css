@@ -1235,3 +1235,18 @@ body[data-screen-profile="tablet_10"] .orderActions {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Закрепленная зеленая шапка на экране заказа */
+.orderTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+body[data-screen-profile="tablet_10"] .orderTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+}
