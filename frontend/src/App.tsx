@@ -348,18 +348,34 @@ function App() {
     }
   }, [screenProfile])
 
-  async function requestAppFullscreen() {
+  async function toggleAppFullscreen() {
     const root = document.documentElement as any
-
-    if (document.fullscreenElement) {
-      return
-    }
+    const doc = document as any
 
     try {
+      const fullscreenElement =
+        document.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.msFullscreenElement
+
+      if (fullscreenElement) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if (doc.webkitExitFullscreen) {
+          doc.webkitExitFullscreen()
+        } else if (doc.msExitFullscreen) {
+          doc.msExitFullscreen()
+        }
+
+        return
+      }
+
       if (root.requestFullscreen) {
         await root.requestFullscreen({ navigationUI: 'hide' })
       } else if (root.webkitRequestFullscreen) {
         root.webkitRequestFullscreen()
+      } else if (root.msRequestFullscreen) {
+        root.msRequestFullscreen()
       }
     } catch {
       // Chrome может отказать во fullscreen, если жест не распознан как пользовательское действие.
@@ -377,7 +393,7 @@ function App() {
 
     if (now - lastTopbarTapAt.current < 450) {
       lastTopbarTapAt.current = 0
-      requestAppFullscreen()
+      toggleAppFullscreen()
       return
     }
 
