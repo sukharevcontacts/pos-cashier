@@ -2824,3 +2824,30 @@ body[data-screen-profile="tablet_10"] .mainKeypadActions button {
 .sbpKeypad {
   display: none !important;
 }
+
+
+/* Место под убранную кнопку Выйти в верхнем меню */
+.topbarLogoutSpacer {
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+body[data-screen-profile="tablet_10"] .topbarLogoutSpacer {
+  height: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
+}

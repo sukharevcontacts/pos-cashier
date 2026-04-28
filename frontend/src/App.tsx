@@ -2899,9 +2899,9 @@ function App() {
             <button className="secondary" onClick={switchStore}>
               Сменить ТВТ
             </button>
-            <button className="secondary" onClick={logoutCashier}>
+            <span className="topbarLogoutSpacer" aria-hidden="true">
               Выйти
-            </button>
+            </span>
           </div>
         </header>
 
