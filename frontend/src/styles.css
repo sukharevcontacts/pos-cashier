@@ -1957,3 +1957,178 @@ body[data-screen-profile="tablet_10"] .rightPanel .ordersList::-webkit-scrollbar
 body[data-screen-profile="tablet_10"] .leftPanel::-webkit-scrollbar-track {
   background: transparent;
 }
+
+
+/* Планшет 10: карточки заказов не растягиваются */
+body[data-screen-profile="tablet_10"] .ordersList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  /* Главное: не растягивать строки grid на всю высоту */
+  align-content: start;
+  justify-content: stretch;
+  grid-auto-rows: max-content;
+
+  gap: 8px;
+  padding-right: 4px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCard {
+  flex: 0 0 auto;
+  align-self: start;
+  min-height: 0;
+  height: auto;
+  padding: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCardRight {
+  display: grid;
+  justify-items: end;
+  align-content: start;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .deleteOrderButton {
+  align-self: start;
+}
+
+
+/* Кнопка удаления заказа в верхней строке карточки */
+.orderCardRight {
+  display: grid;
+  justify-items: end;
+  align-content: start;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.orderCardAmountRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.orderCardAmountRow b {
+  white-space: nowrap;
+}
+
+.deleteOrderButton {
+  margin-top: 0;
+  padding: 8px 12px;
+  min-height: 34px;
+  border-radius: 9px;
+  background: #b71c1c;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+}
+
+body[data-screen-profile="tablet_10"] .orderCardRight {
+  gap: 6px;
+  min-width: 180px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCardAmountRow {
+  gap: 10px;
+  min-height: 34px;
+}
+
+body[data-screen-profile="tablet_10"] .deleteOrderButton {
+  padding: 7px 10px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+
+/* Фиксированные позиции кнопки удаления и суммы заказа */
+.orderCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  column-gap: 14px;
+  align-items: start;
+}
+
+.orderCardRight {
+  width: 190px;
+  min-width: 190px;
+  display: grid;
+  justify-items: stretch;
+  align-content: start;
+  gap: 8px;
+}
+
+.orderCardAmountRow {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 82px 90px;
+  column-gap: 10px;
+  align-items: center;
+  justify-content: end;
+  min-height: 34px;
+}
+
+.orderCardAmountRow .deleteOrderButton {
+  grid-column: 1;
+  justify-self: stretch;
+}
+
+.orderCardAmountRow b {
+  grid-column: 2;
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.orderCardRight > span {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 0;
+}
+
+.deleteOrderButton {
+  width: 82px;
+  margin: 0;
+  padding: 8px 10px;
+  min-height: 34px;
+  border-radius: 9px;
+  line-height: 1;
+}
+
+/* Если кнопки нет, сумма все равно остается в правой фиксированной колонке */
+.orderCardAmountRow > b:first-child {
+  grid-column: 2;
+}
+
+body[data-screen-profile="tablet_10"] .orderCard {
+  grid-template-columns: minmax(0, 1fr) 172px;
+  column-gap: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCardRight {
+  width: 172px;
+  min-width: 172px;
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCardAmountRow {
+  grid-template-columns: 74px 84px;
+  column-gap: 8px;
+  min-height: 32px;
+}
+
+body[data-screen-profile="tablet_10"] .deleteOrderButton {
+  width: 74px;
+  padding: 7px 8px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCardAmountRow b {
+  font-size: 13px;
+}

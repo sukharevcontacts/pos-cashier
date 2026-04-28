@@ -2947,20 +2947,21 @@ function App() {
                     <span>{order.status_label}</span>
                   </div>
                   <div className="orderCardRight">
-                    <b>{formatMoney(order.order_sum)}</b>
+                    <div className="orderCardAmountRow">
+                      {order.status === 'in_progress' && (
+                        <button
+                          className="deleteOrderButton"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteOrderDialog(order)
+                          }}
+                        >
+                          Удалить
+                        </button>
+                      )}
+                      <b>{formatMoney(order.order_sum)}</b>
+                    </div>
                     <span>{order.delivery_date || 'без даты'}</span>
-
-                    {order.status === 'in_progress' && (
-                      <button
-                        className="deleteOrderButton"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteOrderDialog(order)
-                        }}
-                      >
-                        Удалить
-                      </button>
-                    )}
                   </div>
                 </div>
               ))}
