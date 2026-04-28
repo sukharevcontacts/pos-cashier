@@ -2451,3 +2451,274 @@ body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar-track {
     box-shadow 0.14s ease,
     transform 0.14s ease;
 }
+
+
+/* Своя цифровая клавиатура количества */
+.qtyDialog {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+
+.qtyDialogBody {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.qtyControl {
+  margin-top: 8px;
+}
+
+.qtyDisplay {
+  min-height: 54px;
+  border: 1px solid #bbb;
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  text-align: center;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.qtyKeypad {
+  width: min(420px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.qtyKeyBtn {
+  min-height: 50px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.qtySum {
+  margin-top: 0;
+}
+
+body[data-screen-profile="tablet_10"] .qtyDialog {
+  width: min(720px, 96vw);
+  max-height: calc(100dvh - 16px);
+  padding: 16px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyDialogHeader {
+  padding-bottom: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyDialogHeader h2 {
+  font-size: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyDialogBody {
+  gap: 9px;
+  padding-top: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyProduct {
+  grid-template-columns: 82px 1fr;
+  gap: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyPhoto {
+  width: 76px;
+  height: 76px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyControl {
+  grid-template-columns: 72px 1fr 72px;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyBtn {
+  font-size: 24px;
+  min-height: 46px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyDisplay {
+  min-height: 46px;
+  font-size: 25px;
+  border-radius: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyKeypad {
+  width: min(360px, 100%);
+  gap: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyKeyBtn {
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 21px;
+}
+
+body[data-screen-profile="tablet_10"] .qtySum {
+  font-size: 19px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyActions {
+  gap: 8px;
+  margin-top: 4px;
+}
+
+
+
+
+/* Позиционируемый курсор в поле количества */
+.qtyDisplay {
+  gap: 0;
+  cursor: text;
+  border: 2px solid #0b8a3a;
+  color: #111;
+}
+
+.qtyDisplay:focus,
+.qtyDisplay:focus-visible {
+  outline: 3px solid rgba(11, 138, 58, 0.22);
+  outline-offset: 2px;
+}
+
+.qtyDigitSlot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  min-height: 34px;
+  padding: 0 1px;
+}
+
+.qtyCaret {
+  display: inline-block;
+  width: 3px;
+  height: 32px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: #008a3d;
+  animation: qtyDisplayCaretBlink 0.9s steps(2, start) infinite;
+  vertical-align: middle;
+}
+
+@keyframes qtyDisplayCaretBlink {
+  0%, 45% {
+    opacity: 1;
+  }
+
+  46%, 100% {
+    opacity: 0;
+  }
+}
+
+body[data-screen-profile="tablet_10"] .qtyDigitSlot {
+  min-width: 16px;
+  min-height: 28px;
+}
+
+body[data-screen-profile="tablet_10"] .qtyCaret {
+  width: 2px;
+  height: 26px;
+  margin: 0 2px;
+}
+
+
+/* Подтверждение пополнения наличными внутри приложения */
+.cashTopupConfirmDialog {
+  width: min(560px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
+}
+
+.cashTopupConfirmBody {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+}
+
+.cashTopupConfirmRow,
+.cashTopupConfirmAmount {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #f7f7f7;
+}
+
+.cashTopupConfirmRow span,
+.cashTopupConfirmAmount span {
+  color: #666;
+}
+
+.cashTopupConfirmRow b,
+.cashTopupConfirmAmount b {
+  text-align: right;
+}
+
+.cashTopupConfirmAmount {
+  border-color: #0b8a3a;
+  background: #eef7f0;
+}
+
+.cashTopupConfirmAmount b {
+  color: #064f24;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cashTopupConfirmHint {
+  margin: 0;
+  color: #666;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.cashTopupConfirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .cashTopupConfirmDialog {
+  width: min(520px, 96vw);
+  padding: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .cashTopupConfirmBody {
+  gap: 10px;
+  padding-top: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .cashTopupConfirmRow,
+body[data-screen-profile="tablet_10"] .cashTopupConfirmAmount {
+  padding: 10px 12px;
+}
+
+body[data-screen-profile="tablet_10"] .cashTopupConfirmAmount b {
+  font-size: 22px;
+}
+
+body[data-screen-profile="tablet_10"] .cashTopupConfirmHint {
+  font-size: 13px;
+}
+
+body[data-screen-profile="tablet_10"] .cashTopupConfirmActions {
+  gap: 8px;
+}

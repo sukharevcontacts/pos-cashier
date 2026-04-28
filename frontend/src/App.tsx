@@ -243,6 +243,8 @@ function App() {
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<number | null>(null)
   const [cashTopupAmount, setCashTopupAmount] = useState('')
   const [cashTopupLoading, setCashTopupLoading] = useState(false)
+  const [cashTopupConfirmOpen, setCashTopupConfirmOpen] = useState(false)
+  const cashTopupConfirmOpenedAtRef = useRef(0)
 
   const [newUserDialogOpen, setNewUserDialogOpen] = useState(false)
   const [newUserLoading, setNewUserLoading] = useState(false)
@@ -337,9 +339,11 @@ function App() {
   const [swipeDragX, setSwipeDragX] = useState(0)
   const [swipeCommitX, setSwipeCommitX] = useState(0)
   const [qtyDraft, setQtyDraft] = useState('')
+  const [qtyCaretIndex, setQtyCaretIndex] = useState(0)
   const [qtySaving, setQtySaving] = useState(false)
   const lineSwipeRef = useRef<{ lineId: number; startX: number; startY: number } | null>(null)
   const swipedLineIdRef = useRef<number | null>(null)
+  const deleteLineTapLockRef = useRef(false)
 
   const [payLoading, setPayLoading] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
@@ -876,7 +880,7 @@ function App() {
     }
   }
 
-  async function cashTopup() {
+  function openCashTopupConfirm() {
     if (!cashier || !selectedStore || !foundUser) {
       setError('Сначала найдите пайщика')
       return
@@ -889,7 +893,73 @@ function App() {
       return
     }
 
-    if (!confirm(`Пополнить П/С пайщика на ${formatMoney(amount)} наличными?`)) return
+    setError('')
+    cashTopupConfirmOpenedAtRef.current = Date.now()
+    setCashTopupConfirmOpen(true)
+  }
+
+
+
+  useEffect(() => {
+    if (!cashTopupConfirmOpen) {
+      return
+    }
+
+    function handleCashTopupConfirmKeyDown(e: KeyboardEvent) {
+      if (e.repeat) {
+        return
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        e.stopImmediatePropagation()
+
+        const openedAgo = Date.now() - cashTopupConfirmOpenedAtRef.current
+
+        // Первый Enter только открывает окно.
+        // Второй Enter уже подтверждает, но не в тот же самый момент открытия.
+        if (openedAgo < 250) {
+          return
+        }
+
+        if (!cashTopupLoading) {
+          void cashTopup()
+        }
+
+        return
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        e.stopImmediatePropagation()
+
+        if (!cashTopupLoading) {
+          setCashTopupConfirmOpen(false)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleCashTopupConfirmKeyDown, true)
+
+    return () => {
+      window.removeEventListener('keydown', handleCashTopupConfirmKeyDown, true)
+    }
+  }, [cashTopupConfirmOpen, cashTopupLoading, cashTopupAmount, foundUser, selectedStore, cashier, sessionId])
+
+  async function cashTopup() {
+    if (!cashier || !selectedStore || !foundUser) {
+      setError('Сначала найдите пайщика')
+      return
+    }
+
+    const amount = Number(cashTopupAmount)
+
+    if (!amount || amount <= 0) {
+      setError('Введите сумму пополнения')
+      return
+    }
 
     setCashTopupLoading(true)
     setError('')
@@ -942,6 +1012,7 @@ function App() {
       )
 
       setCashTopupAmount('')
+      setCashTopupConfirmOpen(false)
     } catch (e: any) {
       setError(e.message || 'Ошибка пополнения')
     } finally {
@@ -1442,6 +1513,7 @@ function App() {
     setSwipeAnimatingLineId(null)
     setQtyDialogLine(line)
     setQtyDraft(String(line.qty_final))
+    setQtyCaretIndex(String(line.qty_final).length)
   }
 
   function handleLinePointerDown(e: any, line: OrderLine) {
@@ -1565,11 +1637,98 @@ function App() {
     const step = qtyDialogLine.item_type === 'piece' ? 1 : 0.001
     const next = Math.max(0, current + delta * step)
 
+    const nextValue = qtyDialogLine.item_type === 'piece'
+      ? String(Math.round(next))
+      : next.toFixed(3)
+
+    setQtyDraft(nextValue)
+    setQtyCaretIndex(nextValue.length)
+  }
+
+  function normalizeQtyValue(value: string) {
+    if (!qtyDialogLine) return value
+
     if (qtyDialogLine.item_type === 'piece') {
-      setQtyDraft(String(Math.round(next)))
-    } else {
-      setQtyDraft(next.toFixed(3))
+      return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
     }
+
+    let cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    const dotIndex = cleaned.indexOf('.')
+
+    if (dotIndex !== -1) {
+      cleaned =
+        cleaned.slice(0, dotIndex + 1) +
+        cleaned.slice(dotIndex + 1).replace(/\./g, '')
+    }
+
+    cleaned = cleaned.replace(/^0+(?=\d)/, '')
+
+    return cleaned
+  }
+
+  function insertQtyText(valueToInsert: string) {
+    if (!qtyDialogLine || qtySaving) return
+
+    const current = String(qtyDraft || '')
+    const caret = Math.max(0, Math.min(qtyCaretIndex, current.length))
+
+    if (qtyDialogLine.item_type === 'piece' && valueToInsert === '.') {
+      return
+    }
+
+    if (qtyDialogLine.item_type === 'weight' && valueToInsert === '.' && current.includes('.')) {
+      return
+    }
+
+    let insertValue = valueToInsert
+
+    if (qtyDialogLine.item_type === 'weight' && valueToInsert === '.' && current.length === 0) {
+      insertValue = '0.'
+    }
+
+    let next = current.slice(0, caret) + insertValue + current.slice(caret)
+
+    if (current === '0' && valueToInsert !== '.' && caret === 1) {
+      next = valueToInsert
+    }
+
+    next = normalizeQtyValue(next)
+
+    const nextCaret = Math.max(0, Math.min(caret + insertValue.length, next.length))
+
+    setQtyDraft(next)
+    setQtyCaretIndex(nextCaret)
+  }
+
+  function appendQtyDigit(digit: string) {
+    insertQtyText(digit)
+  }
+
+  function appendQtyDot() {
+    insertQtyText('.')
+  }
+
+  function backspaceQtyDraft() {
+    if (qtySaving) return
+
+    const current = String(qtyDraft || '')
+    const caret = Math.max(0, Math.min(qtyCaretIndex, current.length))
+
+    if (caret <= 0) {
+      return
+    }
+
+    const next = current.slice(0, caret - 1) + current.slice(caret)
+
+    setQtyDraft(next)
+    setQtyCaretIndex(caret - 1)
+  }
+
+  function clearQtyDraft() {
+    if (qtySaving) return
+
+    setQtyDraft('')
+    setQtyCaretIndex(0)
   }
 
   async function saveQtyDraft() {
@@ -1644,8 +1803,20 @@ function App() {
     }
   }
 
-  async function deleteQtyLine() {
-    const lineToDelete = deleteLineDialogLine || qtyDialogLine
+  function confirmDeleteQtyLineFromButton(lineArg?: OrderLine | null) {
+    if (deleteLineTapLockRef.current || qtySaving) return
+
+    deleteLineTapLockRef.current = true
+
+    void deleteQtyLine(lineArg).finally(() => {
+      window.setTimeout(() => {
+        deleteLineTapLockRef.current = false
+      }, 300)
+    })
+  }
+
+  async function deleteQtyLine(lineArg?: OrderLine | null) {
+    const lineToDelete = lineArg || deleteLineDialogLine || qtyDialogLine
 
     if (!cashier || !selectedStore || !orderDetails || !lineToDelete) return
 
@@ -2111,14 +2282,90 @@ function App() {
                       <button className="primary qtyBtn" onClick={() => changeQtyDraft(-1)} disabled={qtySaving}>
                         -
                       </button>
-                      <input
-                        value={qtyDraft}
-                        onChange={(e) => setQtyDraft(e.target.value)}
-                        inputMode="decimal"
-                      />
+                      <button
+                        type="button"
+                        className="qtyDisplay"
+                        aria-label="Количество товара"
+                        onClick={() => setQtyCaretIndex(String(qtyDraft || '').length)}
+                      >
+                        {String(qtyDraft || '0').split('').map((char, index) => (
+                          <span
+                            key={`${char}-${index}`}
+                            className="qtyDigitSlot"
+                            onClick={(e) => {
+                              e.stopPropagation()
+
+                              if (!qtyDraft) {
+                                setQtyCaretIndex(0)
+                                return
+                              }
+
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                              setQtyCaretIndex(nextIndex)
+                            }}
+                          >
+                            {qtyDraft && qtyCaretIndex === index && <span className="qtyCaret" />}
+                            {char}
+                          </span>
+                        ))}
+                        {qtyDraft && qtyCaretIndex >= String(qtyDraft).length && <span className="qtyCaret" />}
+                        {!qtyDraft && <span className="qtyCaret" />}
+                      </button>
                       <button className="primary qtyBtn" onClick={() => changeQtyDraft(1)} disabled={qtySaving}>
                         +
                       </button>
+                    </div>
+
+                    <div className="qtyKeypad" aria-label="Цифровая клавиатура количества">
+                      {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                        <button
+                          key={digit}
+                          type="button"
+                          className="qtyKeyBtn"
+                          onClick={() => appendQtyDigit(digit)}
+                          disabled={qtySaving}
+                        >
+                          {digit}
+                        </button>
+                      ))}
+
+                      <button
+                        type="button"
+                        className="qtyKeyBtn secondary"
+                        onClick={backspaceQtyDraft}
+                        disabled={qtySaving}
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        className="qtyKeyBtn"
+                        onClick={() => appendQtyDigit('0')}
+                        disabled={qtySaving}
+                      >
+                        0
+                      </button>
+                      {qtyDialogLine.item_type === 'weight' ? (
+                        <button
+                          type="button"
+                          className="qtyKeyBtn"
+                          onClick={appendQtyDot}
+                          disabled={qtySaving}
+                        >
+                          .
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="qtyKeyBtn secondary"
+                          onClick={clearQtyDraft}
+                          disabled={qtySaving}
+                        >
+                          C
+                        </button>
+                      )}
                     </div>
 
                     <div className="qtySum">
@@ -2191,7 +2438,19 @@ function App() {
                     >
                       Отмена
                     </button>
-                    <button className="danger" onClick={deleteQtyLine} disabled={qtySaving}>
+                    <button
+                      className="danger"
+                      onPointerUp={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        confirmDeleteQtyLineFromButton(deleteLineDialogLine || qtyDialogLine)
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }}
+                      disabled={qtySaving}
+                    >
                       {qtySaving ? 'Удаляем...' : 'Удалить товар'}
                     </button>
                   </div>
@@ -2698,6 +2957,72 @@ function App() {
           </div>
         )}
 
+        {cashTopupConfirmOpen && foundUser && (
+          <div className="qtyOverlay cashTopupConfirmOverlay">
+            <div className="cashTopupConfirmDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Подтвердить пополнение?</h2>
+                  <p className="muted">
+                    Пополнение П/С наличными
+                  </p>
+                </div>
+                <button
+                  className="secondary"
+                  onClick={() => setCashTopupConfirmOpen(false)}
+                  disabled={cashTopupLoading}
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                <div className="cashTopupConfirmRow">
+                  <span>Пайщик</span>
+                  <b>{foundUser.user_account}</b>
+                </div>
+
+                <div className="cashTopupConfirmRow">
+                  <span>ФИО</span>
+                  <b>
+                    {`${foundUser.user_fam ?? ''} ${foundUser.user_name ?? ''} ${foundUser.user_otch ?? ''}`.trim() || '—'}
+                  </b>
+                </div>
+
+                <div className="cashTopupConfirmAmount">
+                  <span>Сумма пополнения</span>
+                  <b>{formatMoney(Number(cashTopupAmount))}</b>
+                </div>
+
+                <p className="cashTopupConfirmHint">
+                  После подтверждения сумма будет зачислена на П/С пайщика, а наличные кассира увеличатся.
+                </p>
+
+                {error && <div className="error">{error}</div>}
+
+                <div className="cashTopupConfirmActions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setCashTopupConfirmOpen(false)}
+                    disabled={cashTopupLoading}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={cashTopup}
+                    disabled={cashTopupLoading}
+                  >
+                    {cashTopupLoading ? 'Пополняем...' : 'Подтвердить'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {txDialogOpen && (
           <div className="itemPickerOverlay">
             <div className="itemPicker">
@@ -2858,15 +3183,25 @@ function App() {
               <div className="sumBox">
                 <label>Сумма пополнения</label>
                 <input
-                  placeholder="0.00"
                   value={cashTopupAmount}
                   onChange={(e) => setCashTopupAmount(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (!cashTopupConfirmOpen) {
+                        openCashTopupConfirm()
+                      }
+                    }
+                  }}
+                  placeholder="Сумма наличными"
                   inputMode="decimal"
+                  enterKeyHint="done"
                 />
               </div>
               <button
                 className="secondary"
-                onClick={cashTopup}
+                onClick={openCashTopupConfirm}
                 disabled={!foundUser || cashTopupLoading}
               >
                 {cashTopupLoading ? 'Пополняем...' : 'Пополнить'}
