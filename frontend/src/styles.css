@@ -2254,3 +2254,29 @@ body[data-screen-profile="tablet_10"] .orderStatusBox b {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Картинка на экране входа */
+.loginPanel {
+  max-width: 520px;
+}
+
+.loginIntroImage {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+  object-fit: contain;
+  margin: -8px auto 18px;
+  border-radius: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .loginPanel {
+  max-width: 460px;
+  padding: 20px;
+}
+
+body[data-screen-profile="tablet_10"] .loginIntroImage {
+  max-height: 170px;
+  margin: -4px auto 14px;
+}

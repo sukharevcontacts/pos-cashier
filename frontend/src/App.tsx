@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import introImage from './assets/intro.jpg'
 import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
@@ -3011,9 +3012,8 @@ function App() {
   return (
     <div className="app">
       <div className="centerBox">
-        <div className="panel">
-          <h1>Касса Коопторгъ</h1>
-          <p className="muted">Вход кассира</p>
+        <div className="panel loginPanel">
+          <img className="loginIntroImage" src={introImage} alt="Коопторгъ" />
 
           <label>Логин кассира</label>
           <input
