@@ -477,6 +477,14 @@ function App() {
     }
   }
 
+  function shouldUseTouchKeypad() {
+    return (
+      screenProfile === 'tablet_10' &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(pointer: coarse)').matches
+    )
+  }
+
   function appendMainKeypadValue(value: string) {
     if (mainKeypadTarget === 'search') {
       setSearchQuery((current) => `${current || ''}${value}`.replace(/\D/g, ''))
@@ -564,7 +572,7 @@ function App() {
   }
 
   function renderMainKeypad() {
-    if (screenProfile !== 'tablet_10' || !mainKeypadTarget) {
+    if (!shouldUseTouchKeypad() || !mainKeypadTarget) {
       return null
     }
 
@@ -2161,7 +2169,7 @@ function App() {
     const timer = window.setTimeout(() => {
       sbpAmountInputRef.current?.focus({ preventScroll: true })
 
-      if (screenProfile === 'tablet_10') {
+      if (shouldUseTouchKeypad()) {
         setMainKeypadTarget('sbpTopup')
       }
     }, 80)
@@ -2423,13 +2431,13 @@ function App() {
                         }
                       }}
                       onFocus={() => {
-                        if (screenProfile === 'tablet_10') setMainKeypadTarget('sbpTopup')
+                        if (shouldUseTouchKeypad()) setMainKeypadTarget('sbpTopup')
                       }}
                       onClick={() => {
-                        if (screenProfile === 'tablet_10') setMainKeypadTarget('sbpTopup')
+                        if (shouldUseTouchKeypad()) setMainKeypadTarget('sbpTopup')
                       }}
-                      readOnly={screenProfile === 'tablet_10'}
-                      inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
+                      readOnly={shouldUseTouchKeypad()}
+                      inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
                       enterKeyHint="done"
                       placeholder="0.00"
                     />
@@ -3367,8 +3375,8 @@ function App() {
                           sbpTopupStub()
                         }
                       }}
-                      readOnly={screenProfile === 'tablet_10'}
-                      inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
+                      readOnly={shouldUseTouchKeypad()}
+                      inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
                       enterKeyHint="done"
                       placeholder="0.00"
                     />
@@ -3462,15 +3470,15 @@ function App() {
                 className="bigInput"
                 placeholder="№ П/С, телефон или номер заказа"
                 value={searchQuery}
-                readOnly={screenProfile === 'tablet_10'}
-                inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
+                readOnly={shouldUseTouchKeypad()}
+                inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
                 autoComplete="off"
                 enterKeyHint="search"
                 onFocus={() => {
-                  if (screenProfile === 'tablet_10') setMainKeypadTarget('search')
+                  if (shouldUseTouchKeypad()) setMainKeypadTarget('search')
                 }}
                 onClick={() => {
-                  if (screenProfile === 'tablet_10') setMainKeypadTarget('search')
+                  if (shouldUseTouchKeypad()) setMainKeypadTarget('search')
                 }}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -3537,14 +3545,14 @@ function App() {
                     }
                   }}
                   onFocus={() => {
-                    if (screenProfile === 'tablet_10') setMainKeypadTarget('cashTopup')
+                    if (shouldUseTouchKeypad()) setMainKeypadTarget('cashTopup')
                   }}
                   onClick={() => {
-                    if (screenProfile === 'tablet_10') setMainKeypadTarget('cashTopup')
+                    if (shouldUseTouchKeypad()) setMainKeypadTarget('cashTopup')
                   }}
                   placeholder="Сумма наличными"
-                  readOnly={screenProfile === 'tablet_10'}
-                  inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
+                  readOnly={shouldUseTouchKeypad()}
+                  inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
                   enterKeyHint="done"
                 />
               </div>
