@@ -3,6 +3,7 @@ import introImage from './assets/intro.jpg'
 import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
+type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | null
 
 type CashierSettings = {
   cashier_account: number
@@ -230,6 +231,7 @@ function App() {
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
   const [settingsSaving, setSettingsSaving] = useState(false)
+  const [mainKeypadTarget, setMainKeypadTarget] = useState<MainKeypadTarget>(null)
   const lastTopbarTapAt = useRef(0)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -352,6 +354,7 @@ function App() {
   const [sbpAmount, setSbpAmount] = useState('')
   const [sbpMessage, setSbpMessage] = useState('')
   const [sbpLoading, setSbpLoading] = useState(false)
+  const sbpAmountInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     document.body.dataset.screenProfile = screenProfile
@@ -472,6 +475,191 @@ function App() {
     } finally {
       setSettingsSaving(false)
     }
+  }
+
+  function appendMainKeypadValue(value: string) {
+    if (mainKeypadTarget === 'search') {
+      setSearchQuery((current) => `${current || ''}${value}`.replace(/\D/g, ''))
+      return
+    }
+
+    if (mainKeypadTarget === 'cashTopup' || mainKeypadTarget === 'sbpTopup') {
+      const setter = mainKeypadTarget === 'cashTopup' ? setCashTopupAmount : setSbpAmount
+
+      setter((current) => {
+        const raw = String(current || '').replace(',', '.').replace(/[^0-9.]/g, '')
+
+        if (value === '.' && raw.includes('.')) {
+          return raw
+        }
+
+        if (value === '.' && !raw) {
+          return '0.'
+        }
+
+        const next = `${raw}${value}`
+        const dotIndex = next.indexOf('.')
+
+        if (dotIndex === -1) {
+          return next.replace(/^0+(?=\d)/, '') || value
+        }
+
+        return (
+          next.slice(0, dotIndex + 1) +
+          next.slice(dotIndex + 1).replace(/\./g, '')
+        ).replace(/^0+(?=\d)/, '')
+      })
+    }
+  }
+
+  function backspaceMainKeypadValue() {
+    if (mainKeypadTarget === 'search') {
+      setSearchQuery((current) => String(current || '').slice(0, -1))
+      return
+    }
+
+    if (mainKeypadTarget === 'cashTopup') {
+      setCashTopupAmount((current) => String(current || '').slice(0, -1))
+      return
+    }
+
+    if (mainKeypadTarget === 'sbpTopup') {
+      setSbpAmount((current) => String(current || '').slice(0, -1))
+    }
+  }
+
+  function clearMainKeypadValue() {
+    if (mainKeypadTarget === 'search') {
+      setSearchQuery('')
+      return
+    }
+
+    if (mainKeypadTarget === 'cashTopup') {
+      setCashTopupAmount('')
+      return
+    }
+
+    if (mainKeypadTarget === 'sbpTopup') {
+      setSbpAmount('')
+    }
+  }
+
+  function submitMainKeypadValue() {
+    if (mainKeypadTarget === 'search') {
+      setMainKeypadTarget(null)
+      void searchUser()
+      return
+    }
+
+    if (mainKeypadTarget === 'cashTopup') {
+      setMainKeypadTarget(null)
+      openCashTopupConfirm()
+      return
+    }
+
+    if (mainKeypadTarget === 'sbpTopup') {
+      setMainKeypadTarget(null)
+      void sbpTopupStub()
+    }
+  }
+
+  function renderMainKeypad() {
+    if (screenProfile !== 'tablet_10' || !mainKeypadTarget) {
+      return null
+    }
+
+    const isCashTopup = mainKeypadTarget === 'cashTopup'
+    const isSbpTopup = mainKeypadTarget === 'sbpTopup'
+    const isMoneyInput = isCashTopup || isSbpTopup
+
+    const title =
+      mainKeypadTarget === 'search'
+        ? '№ П/С, телефон или заказ'
+        : isSbpTopup
+          ? 'Сумма СБП'
+          : 'Сумма наличными'
+
+    const value =
+      mainKeypadTarget === 'search'
+        ? searchQuery
+        : isSbpTopup
+          ? sbpAmount
+          : cashTopupAmount
+
+    const submitText =
+      mainKeypadTarget === 'search'
+        ? 'Найти'
+        : 'Пополнить'
+
+    return (
+      <div className="mainKeypadPanel">
+        <div className="mainKeypadHeader">
+          <div>
+            <b>{title}</b>
+            <span>{value || '0'}</span>
+          </div>
+          <button className="secondary" type="button" onClick={() => setMainKeypadTarget(null)}>
+            Скрыть
+          </button>
+        </div>
+
+        <div className="mainKeypadGrid">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+            <button
+              key={digit}
+              type="button"
+              className="mainKeypadButton"
+              onClick={() => appendMainKeypadValue(digit)}
+            >
+              {digit}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            className="mainKeypadButton secondary"
+            onClick={backspaceMainKeypadValue}
+          >
+            ←
+          </button>
+
+          <button
+            type="button"
+            className="mainKeypadButton"
+            onClick={() => appendMainKeypadValue('0')}
+          >
+            0
+          </button>
+
+          {isMoneyInput ? (
+            <button
+              type="button"
+              className="mainKeypadButton"
+              onClick={() => appendMainKeypadValue('.')}
+            >
+              .
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="mainKeypadButton secondary"
+              onClick={clearMainKeypadValue}
+            >
+              C
+            </button>
+          )}
+        </div>
+
+        <div className="mainKeypadActions">
+          <button type="button" className="secondary" onClick={clearMainKeypadValue}>
+            Очистить
+          </button>
+          <button type="button" className="primary" onClick={submitMainKeypadValue}>
+            {submitText}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   function renderSideMenu() {
@@ -1925,6 +2113,64 @@ function App() {
     }
   }
 
+
+  function appendSbpAmountValue(value: string) {
+    setSbpAmount((current) => {
+      const raw = String(current || '').replace(',', '.').replace(/[^0-9.]/g, '')
+
+      if (value === '.' && raw.includes('.')) {
+        return raw
+      }
+
+      if (value === '.' && !raw) {
+        return '0.'
+      }
+
+      const next = `${raw}${value}`
+      const dotIndex = next.indexOf('.')
+
+      if (dotIndex === -1) {
+        return next.replace(/^0+(?=\d)/, '') || value
+      }
+
+      return (
+        next.slice(0, dotIndex + 1) +
+        next.slice(dotIndex + 1).replace(/\./g, '')
+      ).replace(/^0+(?=\d)/, '')
+    })
+  }
+
+  function backspaceSbpAmount() {
+    setSbpAmount((current) => String(current || '').slice(0, -1))
+  }
+
+  function clearSbpAmount() {
+    setSbpAmount('')
+  }
+
+  // SBP dialog autofocus and tablet keypad
+  useEffect(() => {
+    if (!sbpDialogOpen) {
+      if (mainKeypadTarget === 'sbpTopup') {
+        setMainKeypadTarget(null)
+      }
+
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      sbpAmountInputRef.current?.focus({ preventScroll: true })
+
+      if (screenProfile === 'tablet_10') {
+        setMainKeypadTarget('sbpTopup')
+      }
+    }, 80)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [sbpDialogOpen, screenProfile])
+
   async function sbpTopupStub() {
     if (!cashier || !selectedStore) return
 
@@ -2166,9 +2412,25 @@ function App() {
 
                     <label>Сумма пополнения</label>
                     <input
+                      ref={sbpAmountInputRef}
                       value={sbpAmount}
                       onChange={(e) => setSbpAmount(e.target.value)}
-                      inputMode="decimal"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          setMainKeypadTarget(null)
+                          void sbpTopupStub()
+                        }
+                      }}
+                      onFocus={() => {
+                        if (screenProfile === 'tablet_10') setMainKeypadTarget('sbpTopup')
+                      }}
+                      onClick={() => {
+                        if (screenProfile === 'tablet_10') setMainKeypadTarget('sbpTopup')
+                      }}
+                      readOnly={screenProfile === 'tablet_10'}
+                      inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
+                      enterKeyHint="done"
                       placeholder="0.00"
                     />
 
@@ -2637,6 +2899,8 @@ function App() {
 
         {renderSideMenu()}
 
+        {renderMainKeypad()}
+
         {deleteOrderDialog && (
           <div className="qtyOverlay">
             <div className="confirmDialog" role="dialog" aria-modal="true">
@@ -3095,11 +3359,82 @@ function App() {
 
                 <label>Сумма пополнения</label>
                 <input
-                  value={sbpAmount}
-                  onChange={(e) => setSbpAmount(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                />
+                      value={sbpAmount}
+                      onChange={(e) => setSbpAmount(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          sbpTopupStub()
+                        }
+                      }}
+                      readOnly={screenProfile === 'tablet_10'}
+                      inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
+                      enterKeyHint="done"
+                      placeholder="0.00"
+                    />
+
+                    {screenProfile === 'tablet_10' && (
+                      <div className="sbpKeypad">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                          <button
+                            key={digit}
+                            type="button"
+                            className="sbpKeyBtn"
+                            onClick={() => appendSbpAmountValue(digit)}
+                            disabled={sbpLoading}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          className="sbpKeyBtn secondary"
+                          onClick={backspaceSbpAmount}
+                          disabled={sbpLoading}
+                        >
+                          ←
+                        </button>
+
+                        <button
+                          type="button"
+                          className="sbpKeyBtn"
+                          onClick={() => appendSbpAmountValue('0')}
+                          disabled={sbpLoading}
+                        >
+                          0
+                        </button>
+
+                        <button
+                          type="button"
+                          className="sbpKeyBtn"
+                          onClick={() => appendSbpAmountValue('.')}
+                          disabled={sbpLoading}
+                        >
+                          .
+                        </button>
+
+                        <div className="sbpKeypadActions">
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={clearSbpAmount}
+                            disabled={sbpLoading}
+                          >
+                            Очистить
+                          </button>
+
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={sbpTopupStub}
+                            disabled={sbpLoading || Number(sbpAmount) <= 0}
+                          >
+                            {sbpLoading ? 'Пополняем...' : 'Пополнить'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                 {error && <div className="error">{error}</div>}
 
@@ -3127,9 +3462,16 @@ function App() {
                 className="bigInput"
                 placeholder="№ П/С, телефон или номер заказа"
                 value={searchQuery}
-                inputMode="decimal"
+                readOnly={screenProfile === 'tablet_10'}
+                inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
                 autoComplete="off"
                 enterKeyHint="search"
+                onFocus={() => {
+                  if (screenProfile === 'tablet_10') setMainKeypadTarget('search')
+                }}
+                onClick={() => {
+                  if (screenProfile === 'tablet_10') setMainKeypadTarget('search')
+                }}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') searchUser()
@@ -3194,8 +3536,15 @@ function App() {
                       }
                     }
                   }}
+                  onFocus={() => {
+                    if (screenProfile === 'tablet_10') setMainKeypadTarget('cashTopup')
+                  }}
+                  onClick={() => {
+                    if (screenProfile === 'tablet_10') setMainKeypadTarget('cashTopup')
+                  }}
                   placeholder="Сумма наличными"
-                  inputMode="decimal"
+                  readOnly={screenProfile === 'tablet_10'}
+                  inputMode={screenProfile === 'tablet_10' ? 'none' : 'decimal'}
                   enterKeyHint="done"
                 />
               </div>

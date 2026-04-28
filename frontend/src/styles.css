@@ -2722,3 +2722,105 @@ body[data-screen-profile="tablet_10"] .cashTopupConfirmHint {
 body[data-screen-profile="tablet_10"] .cashTopupConfirmActions {
   gap: 8px;
 }
+
+
+/* Программная клавиатура основного экрана для планшета */
+.mainKeypadPanel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 70;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.mainKeypadHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mainKeypadHeader b,
+.mainKeypadHeader span {
+  display: block;
+}
+
+.mainKeypadHeader b {
+  font-size: 15px;
+  color: #333;
+}
+
+.mainKeypadHeader span {
+  margin-top: 4px;
+  font-size: 24px;
+  font-weight: 900;
+  color: #064f24;
+  font-variant-numeric: tabular-nums;
+}
+
+.mainKeypadHeader .secondary {
+  padding: 8px 12px;
+  min-height: 36px;
+}
+
+.mainKeypadGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.mainKeypadButton {
+  min-height: 46px;
+  padding: 0;
+  border-radius: 13px;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.mainKeypadActions {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mainKeypadActions button {
+  min-height: 44px;
+}
+
+body[data-screen-profile="tablet_10"] .mainKeypadPanel {
+  right: 10px;
+  bottom: 10px;
+  width: min(320px, calc(100vw - 20px));
+  padding: 12px;
+  border-radius: 16px;
+}
+
+body[data-screen-profile="tablet_10"] .mainKeypadButton {
+  min-height: 40px;
+  font-size: 20px;
+  border-radius: 11px;
+}
+
+body[data-screen-profile="tablet_10"] .mainKeypadHeader span {
+  font-size: 21px;
+}
+
+body[data-screen-profile="tablet_10"] .mainKeypadActions button {
+  min-height: 40px;
+}
+
+
+
+
+/* Скрываем старую встроенную СБП-клавиатуру */
+.sbpKeypad {
+  display: none !important;
+}
