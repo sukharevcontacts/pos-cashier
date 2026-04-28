@@ -3024,6 +3024,9 @@ function App() {
           <input
             value={cashierPasswd}
             onChange={(e) => setCashierPasswd(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') login()
+            }}
             type="password"
             autoComplete="new-password"
             name="cashier_passwd_no_autofill"
