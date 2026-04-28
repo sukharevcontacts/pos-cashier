@@ -1711,3 +1711,249 @@ body[data-screen-profile="tablet_10"] .stockDialog .newUserActions {
   margin: 12px -14px -14px;
   padding: 10px 14px 14px;
 }
+
+
+/* Более компактный режим Планшет 10 дюймов */
+body[data-screen-profile="tablet_10"] {
+  font-size: 13px;
+}
+
+body[data-screen-profile="tablet_10"] .topbar {
+  height: 50px;
+  min-height: 50px;
+  padding: 0 8px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .topbarLeft {
+  gap: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .menuButton {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  font-size: 20px;
+}
+
+body[data-screen-profile="tablet_10"] .title {
+  font-size: 17px;
+  line-height: 1.1;
+}
+
+body[data-screen-profile="tablet_10"] .subtitle {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+body[data-screen-profile="tablet_10"] .topbarActions {
+  gap: 5px;
+}
+
+body[data-screen-profile="tablet_10"] .topbarActions button,
+body[data-screen-profile="tablet_10"] .topbar > button.secondary {
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] button {
+  padding: 9px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+body[data-screen-profile="tablet_10"] input,
+body[data-screen-profile="tablet_10"] select,
+body[data-screen-profile="tablet_10"] textarea {
+  padding: 9px 10px;
+  font-size: 15px;
+  border-radius: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .bigInput {
+  font-size: 16px;
+  padding: 10px 11px;
+}
+
+body[data-screen-profile="tablet_10"] .cashierScreen {
+  grid-template-columns: 1.08fr 1fr;
+  gap: 8px;
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .leftPanel,
+body[data-screen-profile="tablet_10"] .rightPanel,
+body[data-screen-profile="tablet_10"] .orderMain {
+  padding: 10px;
+  border-radius: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .avatarBox {
+  padding: 2px 0 6px;
+}
+
+body[data-screen-profile="tablet_10"] .avatarCircle {
+  width: 76px;
+  height: 76px;
+  font-size: 38px;
+}
+
+body[data-screen-profile="tablet_10"] .searchRow {
+  grid-template-columns: 1fr 104px 88px;
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .infoGrid,
+body[data-screen-profile="tablet_10"] .balanceStrip {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .bottomActions {
+  grid-template-columns: 1fr 110px 76px 110px;
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .ordersHeader {
+  margin-bottom: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .ordersHeader h2 {
+  font-size: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .orderCard,
+body[data-screen-profile="tablet_10"] .stockViewRow,
+body[data-screen-profile="tablet_10"] .txRow,
+body[data-screen-profile="tablet_10"] .lineRow {
+  padding: 8px;
+  border-radius: 9px;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen {
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderTop,
+body[data-screen-profile="tablet_10"] .orderSummary,
+body[data-screen-profile="tablet_10"] .quickAddRow,
+body[data-screen-profile="tablet_10"] .orderActions {
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .linesTable {
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .newUserDialog,
+body[data-screen-profile="tablet_10"] .qtyDialog,
+body[data-screen-profile="tablet_10"] .confirmDialog,
+body[data-screen-profile="tablet_10"] .lineDeleteDialog {
+  padding: 14px;
+  border-radius: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockDialog {
+  padding: 10px 12px 12px;
+  max-height: calc(100vh - 10px);
+}
+
+body[data-screen-profile="tablet_10"] .stockDialog .qtyDialogHeader {
+  margin: -10px -12px 0;
+  padding: 10px 12px 5px;
+}
+
+body[data-screen-profile="tablet_10"] .stockDialog .qtyDialogHeader h2 {
+  font-size: 16px;
+}
+
+body[data-screen-profile="tablet_10"] .stockDialog .qtyDialogHeader p {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockDialog .stockForm {
+  gap: 6px 10px;
+  margin-top: 5px;
+}
+
+body[data-screen-profile="tablet_10"] .stockDialog .newUserActions {
+  margin: 10px -12px -12px;
+  padding: 8px 12px 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockInlineRow {
+  gap: 6px 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockField label {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockSearchResults {
+  max-height: 24vh;
+}
+
+
+/* Планшет 10: фиксированная высота основного экрана и прокрутка заказов */
+body[data-screen-profile="tablet_10"] .cashierScreen {
+  height: calc(100dvh - 50px);
+  max-height: calc(100dvh - 50px);
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+body[data-screen-profile="tablet_10"] .leftPanel,
+body[data-screen-profile="tablet_10"] .rightPanel {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Левое окно тоже не должно растягивать страницу */
+body[data-screen-profile="tablet_10"] .leftPanel {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* В правом окне заголовок остается сверху, а список заказов прокручивается */
+body[data-screen-profile="tablet_10"] .rightPanel .ordersHeader {
+  flex: 0 0 auto;
+}
+
+/* Основной вариант: если список заказов имеет класс ordersList */
+body[data-screen-profile="tablet_10"] .rightPanel .ordersList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+/* Если заказы лежат прямо внутри rightPanel без отдельного контейнера */
+body[data-screen-profile="tablet_10"] .rightPanel > .orderCard:first-of-type {
+  margin-top: 0;
+}
+
+/* Красивый тонкий скролл внутри списка заказов */
+body[data-screen-profile="tablet_10"] .rightPanel .ordersList::-webkit-scrollbar,
+body[data-screen-profile="tablet_10"] .leftPanel::-webkit-scrollbar {
+  width: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .rightPanel .ordersList::-webkit-scrollbar-thumb,
+body[data-screen-profile="tablet_10"] .leftPanel::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 999px;
+}
+
+body[data-screen-profile="tablet_10"] .rightPanel .ordersList::-webkit-scrollbar-track,
+body[data-screen-profile="tablet_10"] .leftPanel::-webkit-scrollbar-track {
+  background: transparent;
+}
