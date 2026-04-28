@@ -219,7 +219,7 @@ function formatQty(value: number | null | undefined, itemType?: string) {
 
 function App() {
   const [cashierAccount, setCashierAccount] = useState('1000728')
-  const [cashierPasswd, setCashierPasswd] = useState('9999')
+  const [cashierPasswd, setCashierPasswd] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [sessionId, setSessionId] = useState('')
@@ -3019,6 +3019,8 @@ function App() {
             value={cashierPasswd}
             onChange={(e) => setCashierPasswd(e.target.value)}
             type="password"
+            autoComplete="new-password"
+            name="cashier_passwd_no_autofill"
           />
 
           {error && <div className="error">{error}</div>}
