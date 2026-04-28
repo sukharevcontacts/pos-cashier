@@ -2280,3 +2280,174 @@ body[data-screen-profile="tablet_10"] .loginIntroImage {
   max-height: 170px;
   margin: -4px auto 14px;
 }
+
+
+
+/* Верхняя информация по заказу не растягивается */
+body[data-screen-profile="tablet_10"] .orderTop,
+body[data-screen-profile="tablet_10"] .orderSummary,
+body[data-screen-profile="tablet_10"] .error,
+body[data-screen-profile="tablet_10"] .emptyOrder,
+body[data-screen-profile="tablet_10"] .quickAddRow,
+body[data-screen-profile="tablet_10"] .orderActions {
+  flex: 0 0 auto;
+}
+
+/* Список товаров занимает все свободное место и прокручивается внутри */
+body[data-screen-profile="tablet_10"] .linesTable {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  gap: 6px;
+  align-content: start;
+}
+
+/* Строки товаров не должны растягиваться по высоте */
+body[data-screen-profile="tablet_10"] .lineRow {
+  flex: 0 0 auto;
+  min-height: 0;
+  height: auto;
+}
+
+/* Нижняя панель действий всегда остается видимой */
+body[data-screen-profile="tablet_10"] .orderActions {
+  margin-top: 8px;
+  padding-top: 0;
+}
+
+/* Блок добавления товара тоже остается над нижними кнопками */
+body[data-screen-profile="tablet_10"] .quickAddRow {
+  margin-top: 8px;
+}
+
+/* Тонкий скролл внутри списка товаров */
+body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar {
+  width: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 999px;
+}
+
+body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+/* Планшет 10: экран заказа без сжатия товарных плашек */
+body[data-screen-profile="tablet_10"] .orderScreen {
+  height: calc(100dvh - 50px);
+  max-height: calc(100dvh - 50px);
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+
+/* Верх заказа, добавление товара и нижние кнопки не участвуют в прокрутке */
+body[data-screen-profile="tablet_10"] .orderTop,
+body[data-screen-profile="tablet_10"] .error,
+body[data-screen-profile="tablet_10"] .emptyOrder,
+body[data-screen-profile="tablet_10"] .quickAddRow,
+body[data-screen-profile="tablet_10"] .orderActions {
+  flex: 0 0 auto;
+}
+
+/* Прокручивается только список товаров */
+body[data-screen-profile="tablet_10"] .linesTable {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+}
+
+/* Главное: плашки товаров не сжимаются */
+body[data-screen-profile="tablet_10"] .lineRow {
+  flex: none;
+  height: auto;
+  min-height: 72px;
+  padding: 10px;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+/* Весовая строка тоже не сжимается */
+body[data-screen-profile="tablet_10"] .lineRow.weightLineRow {
+  min-height: 72px;
+}
+
+/* Заголовок таблицы товаров, если он есть, тоже не должен сжиматься */
+body[data-screen-profile="tablet_10"] .linesHeader {
+  flex: 0 0 auto;
+}
+
+/* Нижние элементы */
+body[data-screen-profile="tablet_10"] .quickAddRow {
+  margin-top: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderActions {
+  margin-top: 8px;
+}
+
+/* Тонкий скролл внутри списка товаров */
+body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar {
+  width: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 999px;
+}
+
+body[data-screen-profile="tablet_10"] .linesTable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+/* Hover-эффект для штучных товаров в заказе */
+@media (hover: hover) and (pointer: fine) {
+  .lineRow:not(.weightLineRow):hover {
+    background: #eef7f0;
+    border-color: #0b8a3a;
+    box-shadow:
+      inset 5px 0 0 #0b8a3a,
+      0 6px 16px rgba(0, 0, 0, 0.08);
+    transform: translateX(2px);
+  }
+
+  .lineRow:not(.weightLineRow):hover b {
+    color: #064f24;
+  }
+
+  .lineRow:not(.weightLineRow):hover small {
+    color: #2f6f48;
+  }
+}
+
+.lineRow {
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    transform 0.14s ease;
+}
