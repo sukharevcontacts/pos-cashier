@@ -2502,8 +2502,8 @@ function App() {
         )}
 
         {stockDialogOpen && (
-          <div className="qtyOverlay">
-            <div className="newUserDialog">
+          <div className="qtyOverlay stockOverlay">
+            <div className="newUserDialog stockDialog">
               <div className="qtyDialogHeader">
                 <div>
                   <h2>Приход товара на ТВТ</h2>
@@ -2515,21 +2515,27 @@ function App() {
               </div>
 
               <div className="stockForm">
-                <label>Код товара</label>
-                <input
-                  value={stockForm.item}
-                  onChange={(e) => updateStockField('item', e.target.value)}
-                  placeholder="Например 2811"
-                  inputMode="numeric"
-                />
+                <div className="stockInlineRow stockFull">
+                  <div className="stockField">
+                    <label>Код товара</label>
+                    <input
+                      value={stockForm.item}
+                      onChange={(e) => updateStockField('item', e.target.value)}
+                      placeholder="Например 2811"
+                      inputMode="numeric"
+                    />
+                  </div>
 
-                <label>Количество прихода</label>
-                <input
-                  value={stockForm.qty_delta}
-                  onChange={(e) => updateStockField('qty_delta', e.target.value)}
-                  placeholder="Например 1 или 1.250"
-                  inputMode="decimal"
-                />
+                  <div className="stockField">
+                    <label>Количество прихода</label>
+                    <input
+                      value={stockForm.qty_delta}
+                      onChange={(e) => updateStockField('qty_delta', e.target.value)}
+                      placeholder="Например 1 или 1.250"
+                      inputMode="decimal"
+                    />
+                  </div>
+                </div>
 
                 <div className="stockSearchBlock stockFull">
                   <label>Поиск товара</label>
