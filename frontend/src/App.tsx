@@ -1838,34 +1838,35 @@ function App() {
         <main className="orderScreen">
           <section className="orderMain">
             <div className="orderTop">
-              <div>
+              <div className="orderTopLeft">
                 <h2>{fio || `Пайщик ${order.user_account}`}</h2>
                 <p className="muted">
                   П/С: {order.user_account} · Телефон: {order.user_phone ?? '—'}
                 </p>
               </div>
+
+              <div className="orderSummary orderSummaryCompact">
+                <div>
+                  <span>Баланс пайщика</span>
+                  <b>{formatMoney(order.user_balance)}</b>
+                </div>
+                <div>
+                  <span>П/С владельца ТВТ</span>
+                  <b>{formatMoney(orderDetails.store.owner_balance)}</b>
+                </div>
+                <div>
+                  <span>Нал. в кассе</span>
+                  <b>{formatMoney(orderDetails.store.cash_balance)}</b>
+                </div>
+                <div>
+                  <span>Лимит</span>
+                  <b>{formatMoney(orderDetails.store.cash_limit)}</b>
+                </div>
+              </div>
+
               <div className="orderStatusBox">
                 <span>{order.status_label}</span>
                 <b>{formatMoney(order.order_sum)}</b>
-              </div>
-            </div>
-
-            <div className="orderSummary">
-              <div>
-                <span>Баланс пайщика</span>
-                <b>{formatMoney(order.user_balance)}</b>
-              </div>
-              <div>
-                <span>П/С владельца ТВТ</span>
-                <b>{formatMoney(orderDetails.store.owner_balance)}</b>
-              </div>
-              <div>
-                <span>Нал. в кассе</span>
-                <b>{formatMoney(orderDetails.store.cash_balance)}</b>
-              </div>
-              <div>
-                <span>Лимит</span>
-                <b>{formatMoney(orderDetails.store.cash_limit)}</b>
               </div>
             </div>
 
