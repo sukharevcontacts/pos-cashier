@@ -3,8 +3,8 @@ from app.services.paritet.client import paritet_client
 
 async def paritet_auth(login: str, password: str):
     payload = {
-        "login": login,
-        "password": password,
+        "login": str(login),
+        "password": str(password)
     }
 
     data = await paritet_client.post(
