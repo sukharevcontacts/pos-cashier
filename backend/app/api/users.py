@@ -3,6 +3,9 @@ from fastapi import APIRouter, HTTPException, Header, Query
 from app.core.session import session_store
 from app.services.paritet.users import find_user as paritet_find_user
 from app.services.paritet.orders import find_orders as paritet_find_orders
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cashier", tags=["cashier"])
 
@@ -64,4 +67,5 @@ async def search_shareholder(
         }
 
     except Exception as e:
+        logger.error(f"Ошибка поиска пайщика/заказа: {e}")
         raise HTTPException(400, str(e))
