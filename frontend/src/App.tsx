@@ -6,7 +6,7 @@ type ScreenProfile = 'auto' | 'tablet_10'
 type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | null
 
 type CashierSettings = {
-  cashier_account: number
+  cashier_account: number | string
   screen_profile: ScreenProfile
   appearance_theme: string
   settings_json: Record<string, unknown>
@@ -21,7 +21,7 @@ type Store = {
 }
 
 type Cashier = {
-  cashier_account: number
+  cashier_account: number | string
   user_fam: string | null
   user_name: string | null
   user_otch: string | null
@@ -432,7 +432,7 @@ function App() {
     }
   }, [])
 
-  async function loadCashierSettings(cashierAccountValue: number) {
+  async function loadCashierSettings(cashierAccountValue: number | string) {
     try {
       const res = await fetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
 
@@ -734,7 +734,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cashier_account: Number(cashierAccount),
+          cashier_account: cashierAccount.trim(),
           cashier_passwd: cashierPasswd,
         }),
       })
@@ -3711,7 +3711,12 @@ function App() {
           <input
             value={cashierAccount}
             onChange={(e) => setCashierAccount(e.target.value)}
-            inputMode="numeric"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') login()
+            }}
+            type="text"
+            autoComplete="username"
+            name="cashier_login"
           />
 
           <label>Пароль</label>
