@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
+from app.core.session import session_store
+from app.services.paritet.orders import get_order_details as paritet_get_order
 
 from app.db.session import get_db
 
@@ -173,244 +176,39 @@ async def create_order(
 @router.get("/{order_number}")
 async def get_order_details(
     order_number: int,
-    cashier_account: int = Query(...),
+    cashier_account_raw: Optional[str] = Query(None, alias="cashier_account"),
     store_id: int = Query(...),
-    session_id: str = Query(...),
     device_id: str = Query("web"),
-    db: AsyncSession = Depends(get_db),
+    x_session_id: str = Header(...),
 ):
-    access_result = await db.execute(
-        text("""
-            SELECT
-                cs.cashier_account,
-                cs.store_id,
-                so.owner_account,
-                owner.balance::float AS owner_balance,
-                COALESCE(cl.cash_balance, 0)::float AS cash_balance,
-                COALESCE(cl.cash_limit, 0)::float AS cash_limit
-            FROM coop.pos_cashier_stores cs
-            JOIN coop.pos_store_owners so
-                ON so.store_id = cs.store_id
-               AND so.is_active = TRUE
-            JOIN coop.pos_users owner
-                ON owner.user_account = so.owner_account
-            LEFT JOIN coop.pos_cashier_limit cl
-                ON cl.cashier_account = cs.cashier_account
-               AND cl.store_owner_account = so.owner_account
-               AND cl.is_active = TRUE
-            WHERE cs.cashier_account = :cashier_account
-              AND cs.store_id = :store_id
-              AND cs.is_active = TRUE
-            LIMIT 1
-        """),
-        {
-            "cashier_account": cashier_account,
-            "store_id": store_id,
-        },
-    )
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
 
-    access = access_result.mappings().first()
-
-    if not access:
-        raise HTTPException(status_code=403, detail="Кассир не имеет доступа к этой ТВТ")
-
-    order_result = await db.execute(
-        text("""
-            SELECT
-                o.order_number,
-                o.user_account,
-                o.store_id,
-                o.status,
-                o.order_date,
-                o.delivery_date,
-                o.date_updated,
-
-                u.user_phone,
-                u.user_name,
-                u.user_fam,
-                u.user_otch,
-                u.balance::float AS user_balance,
-                u.photo_url AS user_photo_url
-            FROM coop.pos_orders o
-            JOIN coop.pos_users u
-                ON u.user_account = o.user_account
-            WHERE o.order_number = :order_number
-              AND o.store_id = :store_id
-              AND o.status <> 'deleted'
-            LIMIT 1
-        """),
-        {
-            "order_number": order_number,
-            "store_id": store_id,
-        },
-    )
-
-    order = order_result.mappings().first()
-
-    if not order:
-        raise HTTPException(status_code=404, detail="Заказ не найден")
-
-    if order["status"] == "in_progress":
-        await db.execute(
-            text("""
-                DELETE FROM coop.pos_order_edit_locks
-                WHERE order_number = :order_number
-                  AND locked_until < now()::timestamp
-            """),
-            {"order_number": order_number},
+    try:
+        result = await paritet_get_order(
+            token=session.token,
+            tvt_id=store_id,
+            order_number=order_number,
         )
 
-        lock_insert_result = await db.execute(
-            text("""
-                INSERT INTO coop.pos_order_edit_locks (
-                    order_number,
-                    cashier_account,
-                    store_id,
-                    locked_at,
-                    locked_until,
-                    device_id,
-                    session_id
-                )
-                VALUES (
-                    :order_number,
-                    :cashier_account,
-                    :store_id,
-                    now()::timestamp,
-                    now()::timestamp + interval '2 minutes',
-                    :device_id,
-                    :session_id
-                )
-                ON CONFLICT (order_number) DO NOTHING
-                RETURNING order_number
-            """),
-            {
-                "order_number": order_number,
-                "cashier_account": cashier_account,
+        return {
+            "ok": True,
+            "readonly": result["readonly"],
+            "order": result["order"],
+            "store": {
                 "store_id": store_id,
-                "device_id": device_id,
-                "session_id": session_id,
+                "owner_account": None,
+                "owner_balance": None,
+                "cash_balance": 0,
+                "cash_limit": 0,
             },
-        )
+            "lines": result["lines"],
+        }
 
-        inserted_lock = lock_insert_result.mappings().first()
-
-        if not inserted_lock:
-            lock_result = await db.execute(
-                text("""
-                    SELECT
-                        order_number,
-                        cashier_account,
-                        store_id,
-                        locked_until,
-                        device_id,
-                        session_id
-                    FROM coop.pos_order_edit_locks
-                    WHERE order_number = :order_number
-                    LIMIT 1
-                """),
-                {"order_number": order_number},
-            )
-
-            lock = lock_result.mappings().first()
-
-            same_session = (
-                lock
-                and lock["cashier_account"] == cashier_account
-                and (
-                    lock["session_id"] == session_id
-                    or lock["device_id"] == device_id
-                )
-            )
-
-            if same_session:
-                await db.execute(
-                    text("""
-                        UPDATE coop.pos_order_edit_locks
-                        SET
-                            locked_until = now()::timestamp + interval '2 minutes',
-                            updated_at = now()
-                        WHERE order_number = :order_number
-                    """),
-                    {"order_number": order_number},
-                )
-            else:
-                await db.rollback()
-                raise HTTPException(
-                    status_code=423,
-                    detail="Заказ сейчас редактирует другой кассир",
-                )
-
-        await db.commit()
-
-    lines_result = await db.execute(
-        text("""
-            SELECT
-                od.order_line_id,
-                od.order_number,
-                od.item,
-
-                pim.item_name,
-                pim.photo_url,
-                pim.item_type,
-                pim.avg_weight::float AS avg_weight,
-                pim.pack,
-
-                od.qty::float AS qty,
-                od.price::float AS price,
-                od.qty_final::float AS qty_final,
-                od.line_status,
-                (od.qty_final * od.price)::float AS line_sum,
-
-                COALESCE(soh.item_stock, 0)::float AS item_stock,
-                COALESCE(soh.reserve, 0)::float AS reserve,
-                COALESCE((soh.item_stock - soh.reserve), 0)::float AS available_qty,
-                COALESCE((od.qty_final + (soh.item_stock - soh.reserve)), od.qty_final)::float AS max_qty_final
-            FROM coop.pos_orders_data od
-            JOIN coop.pos_item_master pim
-                ON pim.item = od.item
-            LEFT JOIN coop.pos_stores_soh soh
-                ON soh.store_id = :store_id
-               AND soh.item = od.item
-            WHERE od.order_number = :order_number
-              AND od.line_status = 'active'
-            ORDER BY od.order_line_id
-        """),
-        {
-            "order_number": order_number,
-            "store_id": store_id,
-        },
-    )
-
-    lines = [dict(row) for row in lines_result.mappings().all()]
-    order_sum = sum(float(line["line_sum"] or 0) for line in lines)
-
-    if order["status"] == "in_progress":
-        status_label = "Передан на выполнение"
-        readonly = False
-    elif order["status"] == "done":
-        status_label = "Выполнен"
-        readonly = True
-    else:
-        status_label = order["status"]
-        readonly = True
-
-    return {
-        "ok": True,
-        "readonly": readonly,
-        "order": {
-            **dict(order),
-            "status_label": status_label,
-            "order_sum": order_sum,
-        },
-        "store": {
-            "store_id": store_id,
-            "owner_account": access["owner_account"],
-            "owner_balance": access["owner_balance"],
-            "cash_balance": access["cash_balance"],
-            "cash_limit": access["cash_limit"],
-        },
-        "lines": lines,
-    }
+    except Exception as e:
+        logger.exception("Ошибка получения заказа")
+        raise HTTPException(400, str(e))
 
 
 @router.post("/{order_number}/unlock")
