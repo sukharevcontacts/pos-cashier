@@ -195,6 +195,33 @@ type OrderReceiptResponse = {
 }
 
 const API_BASE = '/pos-api'
+const SESSION_ID_STORAGE_KEY = 'session_id'
+const STORE_ID_STORAGE_KEY = 'store_id'
+
+function readStoredSessionId() {
+  if (typeof window === 'undefined') return ''
+  return window.sessionStorage.getItem(SESSION_ID_STORAGE_KEY) || ''
+}
+
+function saveStoredSessionId(value: string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(SESSION_ID_STORAGE_KEY, value)
+}
+
+function clearStoredSessionId() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(SESSION_ID_STORAGE_KEY)
+}
+
+function saveStoredStoreId(value: number | string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(STORE_ID_STORAGE_KEY, String(value))
+}
+
+function clearStoredStoreId() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(STORE_ID_STORAGE_KEY)
+}
 
 function formatMoney(value: number | string | null | undefined) {
   const n = Number(value ?? 0)
@@ -224,7 +251,7 @@ function App() {
   const [cashierPasswd, setCashierPasswd] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [sessionId, setSessionId] = useState('')
+  const [sessionId, setSessionId] = useState(() => readStoredSessionId())
   const [cashier, setCashier] = useState<Cashier | null>(null)
   const [stores, setStores] = useState<Store[]>([])
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
@@ -298,12 +325,11 @@ function App() {
     async function sendHeartbeat() {
       const params = new URLSearchParams({
         cashier_account: String(heartbeatCashierAccount),
-        session_id: sessionId,
         device_id: 'web',
       })
 
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `${API_BASE}/cashier/orders/${orderNumber}/heartbeat?${params.toString()}`,
           { method: 'POST' }
         )
@@ -322,7 +348,7 @@ function App() {
     return () => {
       window.clearInterval(timer)
     }
-  }, [cashier, orderDetails, sessionId])
+  }, [cashier, orderDetails])
 
   const [itemPickerOpen, setItemPickerOpen] = useState(false)
   const [itemSearchQuery, setItemSearchQuery] = useState('')
@@ -432,9 +458,46 @@ function App() {
     }
   }, [])
 
+  function handleUnauthorizedResponse() {
+    clearStoredSessionId()
+    clearStoredStoreId()
+    clearWorkplaceState()
+
+    setSessionId('')
+    setCashier(null)
+    setStores([])
+    setCashierPasswd('')
+    setError('Сессия истекла. Войдите заново')
+  }
+
+  async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+    const storedSessionId = readStoredSessionId()
+    const headers = new Headers(init.headers || {})
+
+    if (storedSessionId) {
+      headers.set('X-Session-Id', storedSessionId)
+    }
+
+    const res = await fetch(input, {
+      ...init,
+      headers,
+    })
+
+    if (res.status === 401) {
+      handleUnauthorizedResponse()
+    }
+
+    return res
+  }
+
+  function selectStore(store: Store) {
+    setSelectedStore(store)
+    saveStoredStoreId(store.store_id)
+  }
+
   async function loadCashierSettings(cashierAccountValue: number | string) {
     try {
-      const res = await fetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
+      const res = await apiFetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
 
       if (!res.ok) {
         throw new Error('Не удалось загрузить настройки кассира')
@@ -458,7 +521,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/settings/${cashier.cashier_account}`, {
+      const res = await apiFetch(`${API_BASE}/cashier/settings/${cashier.cashier_account}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -746,9 +809,18 @@ function App() {
 
       const data: LoginResponse = await res.json()
 
+      saveStoredSessionId(data.session_id)
       setSessionId(data.session_id)
       setCashier(data.cashier)
       setStores(data.stores)
+
+      if (data.stores.length === 1) {
+        selectStore(data.stores[0])
+      } else {
+        clearStoredStoreId()
+        setSelectedStore(null)
+      }
+
       await loadCashierSettings(data.cashier.cashier_account)
     } catch (e: any) {
       setError(e.message || 'Ошибка входа')
@@ -771,7 +843,7 @@ function App() {
         q: searchQuery,
       })
 
-      const res = await fetch(`${API_BASE}/cashier/search?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -803,7 +875,7 @@ function App() {
         q: String(foundUser.user_account),
       })
 
-      const res = await fetch(`${API_BASE}/cashier/search?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -844,7 +916,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/users/create`, {
+      const res = await apiFetch(`${API_BASE}/cashier/users/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -857,7 +929,6 @@ function App() {
           date_of_birth: newUserForm.date_of_birth || null,
           address: newUserForm.address,
           email: newUserForm.email,
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -916,7 +987,7 @@ function App() {
         params.set('q', query.trim())
       }
 
-      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/items?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -958,7 +1029,7 @@ function App() {
         params.set('q', query.trim())
       }
 
-      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/items?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -1003,7 +1074,7 @@ function App() {
     setStockMessage('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/stock/receipt`, {
+      const res = await apiFetch(`${API_BASE}/cashier/stock/receipt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1012,7 +1083,6 @@ function App() {
           item: itemCode,
           qty_delta: qtyDelta,
           comment: stockForm.comment,
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -1057,7 +1127,7 @@ function App() {
         limit: '80',
       })
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/users/${foundUser.user_account}/transactions?${params.toString()}`
       )
 
@@ -1161,7 +1231,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/topup/cash`, {
+      const res = await apiFetch(`${API_BASE}/cashier/topup/cash`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1169,7 +1239,6 @@ function App() {
           store_id: selectedStore.store_id,
           user_account: foundUser.user_account,
           amount,
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -1226,14 +1295,13 @@ function App() {
     setSearchLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/orders/create`, {
+      const res = await apiFetch(`${API_BASE}/cashier/orders/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cashier_account: cashier.cashier_account,
           store_id: selectedStore.store_id,
           user_account: foundUser.user_account,
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -1269,13 +1337,12 @@ function App() {
     setSearchLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/orders/${order.order_number}/delete`, {
+      const res = await apiFetch(`${API_BASE}/cashier/orders/${order.order_number}/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cashier_account: cashier.cashier_account,
           store_id: selectedStore.store_id,
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -1311,11 +1378,10 @@ function App() {
       const params = new URLSearchParams({
         cashier_account: String(cashier.cashier_account),
         store_id: String(selectedStore.store_id),
-        session_id: sessionId,
         device_id: 'web',
       })
 
-      const res = await fetch(`${API_BASE}/cashier/orders/${orderNumber}?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -1354,7 +1420,7 @@ function App() {
         store_id: String(selectedStore.store_id),
       })
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${targetOrderNumber}/receipt?${params.toString()}`
       )
 
@@ -1377,11 +1443,10 @@ function App() {
     if (cashier && orderDetails && orderDetails.order.status === 'in_progress') {
       const params = new URLSearchParams({
         cashier_account: String(cashier.cashier_account),
-        session_id: sessionId,
         device_id: 'web',
       })
 
-      await fetch(
+      await apiFetch(
         `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/unlock?${params.toString()}`,
         { method: 'POST' }
       ).catch(() => null)
@@ -1402,17 +1467,17 @@ function App() {
 
     const params = new URLSearchParams({
       cashier_account: String(currentCashier.cashier_account),
-      session_id: sessionId,
       device_id: 'web',
     })
 
-    await fetch(
+    await apiFetch(
       `${API_BASE}/cashier/orders/${currentOrderDetails.order.order_number}/unlock?${params.toString()}`,
       { method: 'POST' }
     ).catch(() => null)
   }
 
   function clearWorkplaceState() {
+    clearStoredStoreId()
     setSelectedStore(null)
     setSearchQuery('')
     setFoundUser(null)
@@ -1474,6 +1539,8 @@ function App() {
     await unlockCurrentOrderIfNeeded()
     clearWorkplaceState()
 
+    clearStoredSessionId()
+
     setCashier(null)
     setStores([])
     setSessionId('')
@@ -1487,7 +1554,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/save`,
         {
           method: 'POST',
@@ -1495,7 +1562,6 @@ function App() {
           body: JSON.stringify({
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
-            session_id: sessionId,
             device_id: 'web',
           }),
         }
@@ -1559,7 +1625,7 @@ function App() {
         params.set('subcategory', subcategory.trim())
       }
 
-      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/items?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -1585,7 +1651,7 @@ function App() {
         store_id: String(selectedStore.store_id),
       })
 
-      const res = await fetch(`${API_BASE}/cashier/items/categories?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/items/categories?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -1616,7 +1682,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
         {
           method: 'POST',
@@ -1625,7 +1691,6 @@ function App() {
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
             item: item.item,
-            session_id: sessionId,
             device_id: 'web',
           }),
         }
@@ -1659,7 +1724,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
         {
           method: 'POST',
@@ -1668,7 +1733,6 @@ function App() {
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
             item: itemCode,
-            session_id: sessionId,
             device_id: 'web',
           }),
         }
@@ -1944,7 +2008,7 @@ function App() {
       const orderNumber = orderDetails.order.order_number
 
       if (nextQty <= 0) {
-        const res = await fetch(
+        const res = await apiFetch(
           `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/delete`,
           {
             method: 'POST',
@@ -1952,7 +2016,6 @@ function App() {
             body: JSON.stringify({
               cashier_account: cashier.cashier_account,
               store_id: selectedStore.store_id,
-              session_id: sessionId,
               device_id: 'web',
             }),
           }
@@ -1969,7 +2032,7 @@ function App() {
         return
       }
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/qty`,
         {
           method: 'POST',
@@ -1978,7 +2041,6 @@ function App() {
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
             qty_final: nextQty,
-            session_id: sessionId,
             device_id: 'web',
           }),
         }
@@ -2022,7 +2084,7 @@ function App() {
     try {
       const orderNumber = orderDetails.order.order_number
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${orderNumber}/lines/${lineToDelete.order_line_id}/delete`,
         {
           method: 'POST',
@@ -2030,7 +2092,6 @@ function App() {
           body: JSON.stringify({
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
-            session_id: sessionId,
             device_id: 'web',
           }),
         }
@@ -2064,7 +2125,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/pay`,
         {
           method: 'POST',
@@ -2072,7 +2133,6 @@ function App() {
           body: JSON.stringify({
             cashier_account: cashier.cashier_account,
             store_id: selectedStore.store_id,
-            session_id: sessionId,
             device_id: 'web',
           }),
         }
@@ -2193,7 +2253,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/topup/sbp`, {
+      const res = await apiFetch(`${API_BASE}/cashier/topup/sbp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2201,7 +2261,6 @@ function App() {
           store_id: selectedStore.store_id,
           user_account: targetUserAccount,
           amount: Number(sbpAmount),
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -3681,7 +3740,7 @@ function App() {
                 <button
                   key={store.store_id}
                   className="storeButton"
-                  onClick={() => setSelectedStore(store)}
+                  onClick={() => selectStore(store)}
                 >
                   <span className="storeName">{store.store_name}</span>
                   <span className="storeAddress">{store.store_address || 'Адрес не указан'}</span>
