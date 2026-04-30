@@ -54,9 +54,10 @@ async def search_shareholder(
 
         if not user:
             logger.info("User not found")
-            return {"found": False}
+            raise HTTPException(status_code=404, detail="Пайщик или заказ не найден")
 
         user_id = user.get("userid")
+        user_account = user.get("account")
 
         # 5. ищем заказы
         orders = await paritet_find_orders(
@@ -65,33 +66,53 @@ async def search_shareholder(
             user_id=user_id
         )
 
-        # 6. маппинг заказов
+        # 6. маппинг заказов под старый формат
         mapped_orders = [
             {
-                "id": o.get("id"),
-                "number": o.get("number"),
-                "date": o.get("datecreate"),
+                "order_number": o.get("number"),
+                "user_account": user_account,
+                "store_id": store_id,
                 "status": o.get("state"),
-                "price": o.get("price"),
-                "can_edit": o.get("canedit"),
-                "can_cancel": o.get("cancancel"),
+                "order_date": o.get("datecreate"),
+                "delivery_date": None,
+                "date_updated": o.get("datecreate"),
+                "order_sum": o.get("price"),
+                "status_label": o.get("state"),
             }
             for o in orders
         ]
 
-        # 7. итог
+        # 7. полный ответ (КРИТИЧНО — как раньше)
         return {
-            "found": True,
-            "user": {
-                "id": user_id,
-                "name": user.get("name"),
-                "phone": user.get("phone"),
-                "email": user.get("email"),
-                "balance": user.get("balance"),
-                "account": user.get("account"),
+            "ok": True,
+            "cashier": {
+                "cashier_account": None,  # временно
+                "store_id": store_id,
             },
-            "orders": mapped_orders
+            "store": {
+                "store_id": store_id,
+                "owner_account": None,
+                "owner_balance": None,
+                "cash_balance": 0,
+                "cash_limit": 0,
+            },
+            "user": {
+                "user_account": user_account,
+                "user_phone": user.get("phone"),
+                "user_name": user.get("name"),
+                "user_fam": None,
+                "user_otch": None,
+                "address": None,
+                "email": user.get("email"),
+                "date_of_birth": None,
+                "balance": user.get("balance"),
+                "photo_url": user.get("photoUrl") or user.get("photo"),
+            },
+            "orders": mapped_orders,
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.exception("Ошибка поиска пайщика/заказа")
