@@ -1,7 +1,7 @@
 from app.services.paritet.client import paritet_client
 
 
-async def find_user(token: str, tvt_id: int, phone: str):
+async def find_user(token: str, tvt_id: int, account: str):
     data = await paritet_client.post(
         action="find_user",
         headers={
@@ -9,7 +9,7 @@ async def find_user(token: str, tvt_id: int, phone: str):
             "TVT-ID": str(tvt_id),
         },
         json={
-            "account": str(phone)
+            "account": str(account)
         }
     )
 
