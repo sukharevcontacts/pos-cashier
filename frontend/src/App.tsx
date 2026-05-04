@@ -1368,31 +1368,51 @@ function App() {
   }
 
   async function openOrder(orderNumber: number) {
-    if (!cashier || !selectedStore) return
-
+    if (!cashier || !selectedStore || !foundUser) return
+  
     setError('')
     setOrderLoading(true)
     setSelectedOrderNumber(orderNumber)
-
+  
     try {
       const params = new URLSearchParams({
         cashier_account: String(cashier.cashier_account),
         store_id: String(selectedStore.store_id),
         device_id: 'web',
       })
-
+  
       const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}?${params.toString()}`)
-
+  
       if (!res.ok) {
         const data = await res.json().catch(() => null)
         throw new Error(data?.detail || 'Не удалось открыть заказ')
       }
-
+  
       const data: OrderDetailsResponse = await res.json()
-      setOrderDetails({
+  
+      // 🔥 ВАЖНО: подмешиваем user из search
+      const enrichedData: OrderDetailsResponse = {
         ...data,
-        lines: (data.lines || []).filter((line) => Number(line.qty_final || 0) > 0),
-      })
+        order: {
+          ...data.order,
+          user_account: foundUser.user_account,
+          user_phone: foundUser.user_phone,
+          user_name: foundUser.user_name,
+          user_fam: foundUser.user_fam,
+          user_otch: foundUser.user_otch,
+          user_balance: foundUser.balance,
+          user_photo_url: foundUser.photo_url,
+        }
+      }
+  
+      setOrderDetails(prev => ({
+        ...prev,
+        ...enrichedData,
+        lines: (enrichedData.lines || []).filter(
+          (line) => Number(line.qty_final || 0) > 0
+        ),
+      }))
+  
     } catch (e: any) {
       setError(e.message || 'Ошибка открытия заказа')
     } finally {
