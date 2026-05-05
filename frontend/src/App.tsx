@@ -264,6 +264,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null)
+  const [ownerBalance, setOwnerBalance] = useState<number>(0)
+  const [cashBalance, setCashBalance] = useState<number>(0)
   const [orders, setOrders] = useState<FoundOrder[]>([])
   const [storeState, setStoreState] = useState<SearchResponse['store'] | null>(null)
   const [txDialogOpen, setTxDialogOpen] = useState(false)
@@ -853,6 +855,7 @@ function App() {
       const data: SearchResponse = await res.json()
 
       setFoundUser(data.user)
+      await fetchStatus()
       setOrders(data.orders)
       setStoreState(data.store)
     } catch (e: any) {
@@ -885,6 +888,7 @@ function App() {
       const data: SearchResponse = await res.json()
 
       setFoundUser(data.user)
+      await fetchStatus()
       setOrders(data.orders)
       setStoreState(data.store)
 
@@ -941,6 +945,7 @@ function App() {
       const data = await res.json()
 
       setFoundUser(data.user)
+      await fetchStatus()
       setOrders([])
       setStoreState(data.store)
       setSelectedOrderNumber(null)
@@ -1367,7 +1372,32 @@ function App() {
     }
   }
 
-  async function openOrder(orderNumber: number) {
+  
+async function fetchStatus() {
+  if (!selectedStore) return
+
+  try {
+    const params = new URLSearchParams({
+      store_id: String(selectedStore.store_id),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/status?${params.toString()}`)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.detail || 'Не удалось получить статус')
+    }
+
+    const data = await res.json()
+
+    setOwnerBalance(Number(data.owner_balance || 0))
+    setCashBalance(Number(data.cash_balance || 0))
+  } catch (e) {
+    console.error('Ошибка получения статуса', e)
+  }
+}
+
+async function openOrder(orderNumber: number) {
     if (!cashier || !selectedStore || !foundUser) return
   
     setError('')
@@ -2357,11 +2387,11 @@ function App() {
                 </div>
                 <div>
                   <span>П/С владельца ТВТ</span>
-                  <b>{formatMoney(orderDetails.store.owner_balance)}</b>
+                  <b>{formatMoney(ownerBalance)}</b>
                 </div>
                 <div>
                   <span>Нал. в кассе</span>
-                  <b>{formatMoney(orderDetails.store.cash_balance)}</b>
+                  <b>{formatMoney(cashBalance)}</b>
                 </div>
                 <div>
                   <span>Лимит</span>
@@ -3670,11 +3700,11 @@ function App() {
             <div className="balanceStrip">
               <div>
                 <span>П/С владельца ТВТ</span>
-                <b>{formatMoney(storeState?.owner_balance ?? selectedStore.owner_balance)}</b>
+                <b>{formatMoney(ownerBalance)}</b>
               </div>
               <div>
                 <span>Нал. в кассе</span>
-                <b>{formatMoney(storeState?.cash_balance)}</b>
+                <b>{formatMoney(cashBalance)}</b>
               </div>
               <div>
                 <span>Лимит</span>
