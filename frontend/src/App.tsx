@@ -1397,6 +1397,12 @@ async function fetchStatus() {
   }
 }
 
+useEffect(() => {
+  if (selectedStore) {
+    fetchStatus()
+  }
+}, [selectedStore])
+
 async function openOrder(orderNumber: number) {
     if (!cashier || !selectedStore || !foundUser) return
   
