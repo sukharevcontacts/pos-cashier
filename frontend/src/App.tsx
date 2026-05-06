@@ -308,6 +308,14 @@ function buildItemSearchParams(query: string) {
   return params
 }
 
+function extractParitetGoods(data: any): any[] {
+  if (Array.isArray(data?.goods)) return data.goods
+  if (Array.isArray(data?.payload?.goods)) return data.payload.goods
+  if (data?.payload && data.payload.id != null) return [data.payload]
+  if (data?.id != null) return [data]
+  return []
+}
+
 function getOrderLineUiId(line: { order_line_id?: number | null; item: number }) {
   return line.order_line_id ?? line.item
 }
@@ -565,6 +573,9 @@ function App() {
   const [itemSearchQuery, setItemSearchQuery] = useState('')
   const [itemsLoading, setItemsLoading] = useState(false)
   const [quickItemCode, setQuickItemCode] = useState('')
+  const [quickItemMatches, setQuickItemMatches] = useState<StoreItem[]>([])
+  const [quickItemSearchLoading, setQuickItemSearchLoading] = useState(false)
+  const [quickItemDropdownOpen, setQuickItemDropdownOpen] = useState(false)
   const [storeItems, setStoreItems] = useState<StoreItem[]>([])
   const [itemCategories, setItemCategories] = useState<ItemCategoryGroup[]>([])
   const [selectedItemCategory, setSelectedItemCategory] = useState('')
@@ -1878,7 +1889,7 @@ async function openOrder(orderNumber: number) {
       }
 
       const data = await res.json()
-      const goods = Array.isArray(data?.goods) ? data.goods : Array.isArray(data?.payload?.goods) ? data.payload.goods : []
+      const goods = extractParitetGoods(data)
 
       setStoreItems(goods.map(mapParitetProductToStoreItem))
       setItemCategories([])
@@ -1932,7 +1943,97 @@ async function openOrder(orderNumber: number) {
     })
   }
 
-  async function addItemToCurrentOrder(item: StoreItem) {
+  async function searchQuickItems(query: string) {
+    if (!cashier || !selectedStore || !orderDetails) return
+
+    const normalizedQuery = query.trim()
+
+    if (!normalizedQuery) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    // Для текстового поиска не дергаем backend на одном символе. Для числового ID/ШК можно искать сразу.
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    setQuickItemSearchLoading(true)
+
+    try {
+      const params = buildItemSearchParams(normalizedQuery)
+      const queryString = params.toString()
+      const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
+
+      console.debug('[cashier-quick-item-search]', {
+        query: normalizedQuery,
+        searchParam: getItemSearchParam(normalizedQuery),
+        url: searchUrl,
+        store_id: selectedStore.store_id,
+      })
+
+      const res = await apiFetch(searchUrl, {
+        headers: {
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось найти товар')
+      }
+
+      const data = await res.json()
+      const goods = extractParitetGoods(data)
+      const mappedItems = goods.map(mapParitetProductToStoreItem)
+
+      setQuickItemMatches(mappedItems)
+      setQuickItemDropdownOpen(mappedItems.length > 0)
+    } catch (e: any) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      setError(e.message || 'Ошибка поиска товара')
+    } finally {
+      setQuickItemSearchLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!orderDetails || orderDetails.readonly) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    const normalizedQuery = quickItemCode.trim()
+
+    if (!normalizedQuery) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void searchQuickItems(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [quickItemCode, selectedStore?.store_id, orderDetails?.order.order_number, orderDetails?.readonly])
+
+  async function addQuickItemToCurrentOrder(item: StoreItem) {
+    await addItemToCurrentOrder(item, { keepSearchOpen: false })
+    setQuickItemCode('')
+    setQuickItemMatches([])
+    setQuickItemDropdownOpen(false)
+  }
+
+  async function addItemToCurrentOrder(item: StoreItem, options: { keepSearchOpen?: boolean } = {}) {
     if (!orderDetails) return
 
     setItemsLoading(true)
@@ -1955,7 +2056,9 @@ async function openOrder(orderNumber: number) {
         return [...lines, mapStoreItemToOrderLine(item)]
       })
 
-      await loadStoreItems(itemSearchQuery)
+      if (options.keepSearchOpen !== false) {
+        await loadStoreItems(itemSearchQuery)
+      }
     } catch (e: any) {
       setError(e.message || 'Ошибка добавления товара')
     } finally {
@@ -1963,78 +2066,18 @@ async function openOrder(orderNumber: number) {
     }
   }
 
-  async function addItemByCode() {
-    if (!cashier || !selectedStore || !orderDetails) return
-
-    const itemCode = quickItemCode.trim()
-
-    if (!itemCode) {
-      setError('Введите код или штрихкод товара')
+  async function handleAddButton() {
+    if (quickItemCode.trim()) {
+      setQuickItemDropdownOpen(true)
+      if (quickItemMatches.length === 1 && /^\d+$/.test(quickItemCode.trim())) {
+        await addQuickItemToCurrentOrder(quickItemMatches[0])
+      } else if (quickItemMatches.length === 0) {
+        await searchQuickItems(quickItemCode)
+      }
       return
     }
 
-    setItemsLoading(true)
-    setError('')
-
-    try {
-      const params = buildItemSearchParams(itemCode)
-      const queryString = params.toString()
-      const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
-
-      console.debug('[cashier-items-search-by-code]', {
-        query: itemCode,
-        searchParam: getItemSearchParam(itemCode),
-        url: searchUrl,
-        store_id: selectedStore.store_id,
-      })
-
-      const res = await apiFetch(searchUrl, {
-        headers: {
-          store_id: String(selectedStore.store_id),
-          'store-id': String(selectedStore.store_id),
-        },
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось найти товар по коду')
-      }
-
-      const data = await res.json()
-      const goods = Array.isArray(data?.goods) ? data.goods : Array.isArray(data?.payload?.goods) ? data.payload.goods : []
-      const foundItem = goods[0] ? mapParitetProductToStoreItem(goods[0]) : null
-
-      if (!foundItem) {
-        throw new Error('Товар по коду не найден')
-      }
-
-      updateOrderLinesLocally((lines) => {
-        const existingIndex = lines.findIndex((line) => line.item === foundItem.item || line.good_id === foundItem.item)
-
-        if (existingIndex >= 0) {
-          return lines.map((line, index) => {
-            if (index !== existingIndex) return line
-            return recalcOrderLine(line, toNumber(line.qty_final, 0) + 1)
-          })
-        }
-
-        return [...lines, mapStoreItemToOrderLine(foundItem)]
-      })
-
-      setQuickItemCode('')
-    } catch (e: any) {
-      setError(e.message || 'Ошибка добавления товара по коду')
-    } finally {
-      setItemsLoading(false)
-    }
-  }
-
-  async function handleAddButton() {
-    if (quickItemCode.trim()) {
-      await addItemByCode()
-    } else {
-      await openItemPicker()
-    }
+    await openItemPicker()
   }
 
   function openQtyDialog(line: OrderLine) {
@@ -2640,23 +2683,99 @@ async function openOrder(orderNumber: number) {
               </div>
             )}
 
-            <div className="quickAddRow">
-              <label>Код товара</label>
+            <div className="quickAddRow" style={{ position: 'relative' }}>
+              <label>Товар</label>
               <input
                 value={quickItemCode}
-                onChange={(e) => setQuickItemCode(e.target.value)}
+                onChange={(e) => {
+                  setQuickItemCode(e.target.value)
+                  setQuickItemDropdownOpen(true)
+                }}
+                onFocus={() => {
+                  if (quickItemMatches.length > 0) setQuickItemDropdownOpen(true)
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
+                    e.preventDefault()
                     handleAddButton()
                   }
+                  if (e.key === 'Escape') {
+                    setQuickItemDropdownOpen(false)
+                  }
                 }}
-                inputMode="numeric"
-                placeholder="Введите код товара или оставьте пустым для выбора"
+                inputMode="text"
+                placeholder="Введите ID, штрихкод или название товара"
                 disabled={orderDetails.readonly}
+                autoComplete="off"
               />
-              <button className="primary" onClick={handleAddButton} disabled={orderDetails.readonly || itemsLoading}>
-                {quickItemCode.trim() ? 'Добавить товар' : 'Выбрать товар'}
+              <button className="primary" onClick={handleAddButton} disabled={orderDetails.readonly || itemsLoading || quickItemSearchLoading}>
+                {quickItemCode.trim() ? 'Показать' : 'Выбрать товар'}
               </button>
+
+              {quickItemCode.trim() && quickItemDropdownOpen && (
+                <div
+                  className="quickItemDropdown"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '100%',
+                    zIndex: 50,
+                    marginTop: 8,
+                    maxHeight: 360,
+                    overflowY: 'auto',
+                    borderRadius: 16,
+                    border: '1px solid rgba(0, 0, 0, 0.12)',
+                    background: '#fff',
+                    boxShadow: '0 18px 45px rgba(0, 0, 0, 0.18)',
+                    padding: 8,
+                  }}
+                >
+                  {quickItemSearchLoading && (
+                    <div className="emptyBox">Ищем товары...</div>
+                  )}
+
+                  {!quickItemSearchLoading && quickItemMatches.length === 0 && (
+                    <div className="emptyBox">Товары не найдены</div>
+                  )}
+
+                  {!quickItemSearchLoading && quickItemMatches.map((item) => (
+                    <button
+                      key={item.item}
+                      type="button"
+                      className="itemCard"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => addQuickItemToCurrentOrder(item)}
+                      disabled={itemsLoading || item.available_qty <= 0}
+                      style={{ width: '100%', textAlign: 'left' }}
+                    >
+                      <div className="itemPhoto">
+                        {item.photo_url ? (
+                          <img src={item.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+
+                      <div className="itemInfo">
+                        <b>{item.item_name}</b>
+                        <span>
+                          ID {item.item}{item.code ? ` · ШК ${item.code}` : ''} · {item.item_category || 'Без категории'}
+                        </span>
+                        <span>
+                          {item.item_type === 'weight' ? `Весовой · ${item.pack || 'кг'}` : 'Штучный товар'}
+                        </span>
+                      </div>
+
+                      <div className="itemNumbers">
+                        <b>{formatMoney(item.price)}</b>
+                        <span>Доступно: {formatQty(item.available_qty, item.item_type)}</span>
+                        <span>Добавить</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="orderActions">
