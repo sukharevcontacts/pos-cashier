@@ -87,7 +87,14 @@ type UserTransactionRow = {
 }
 
 type OrderLine = {
-  order_line_id: number
+  order_line_id: number | null
+  good_id: number
+  good_name: string
+  unit: string
+  id: number
+  name: string
+  code?: string | null
+  isfractional?: boolean
   item: number
   item_name: string
   photo_url: string | null
@@ -105,6 +112,15 @@ type OrderLine = {
 }
 
 type StoreItem = {
+  good_id?: number
+  good_name?: string
+  id?: number
+  name?: string
+  code?: string | null
+  isfractional?: boolean
+  unit?: string | null
+  category?: number | string | null
+  currency?: string | null
   item: number
   item_name: string
   item_category: string | null
@@ -244,6 +260,185 @@ function formatQty(value: number | null | undefined, itemType?: string) {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   })
+}
+
+
+function toNumber(value: any, fallback = 0) {
+  const n = Number(value ?? fallback)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function isNumericSearch(value: string) {
+  return /^\d+$/.test(value.trim())
+}
+
+function buildItemSearchParams(query: string) {
+  const normalizedQuery = query.trim()
+  const params = new URLSearchParams()
+
+  if (!normalizedQuery) {
+    return params
+  }
+
+  if (isNumericSearch(normalizedQuery)) {
+    // Короткое число в кассе считаем ID товара Paritet, длинное число — штрихкод.
+    if (normalizedQuery.length >= 8) {
+      params.set('barcode', normalizedQuery)
+    } else {
+      params.set('ids', normalizedQuery)
+    }
+  } else {
+    params.set('q', normalizedQuery)
+  }
+
+  return params
+}
+
+function getOrderLineUiId(line: { order_line_id?: number | null; item: number }) {
+  return line.order_line_id ?? line.item
+}
+
+function recalcOrderLine(line: OrderLine, nextQty: number): OrderLine {
+  const normalizedQty = Math.max(0, toNumber(nextQty, 0))
+  return {
+    ...line,
+    qty: normalizedQty,
+    qty_final: normalizedQty,
+    line_sum: normalizedQty * toNumber(line.price, 0),
+    max_qty_final: normalizedQty + toNumber(line.available_qty, 0),
+  }
+}
+
+function mapParitetProductToStoreItem(product: any): StoreItem {
+  const productId = toNumber(product?.id, 0)
+  const productName = String(product?.name ?? '')
+  const itemStock = toNumber(product?.count, 0)
+  const availableQty = toNumber(product?.availablecount, itemStock)
+  const isFractional = Boolean(product?.isfractional)
+
+  return {
+    good_id: productId,
+    good_name: productName,
+    id: productId,
+    name: productName,
+    code: product?.code ?? null,
+    isfractional: isFractional,
+    unit: product?.unit ?? null,
+    category: product?.category ?? null,
+    currency: product?.currency ?? null,
+    item: productId,
+    item_name: productName,
+    item_category: product?.category != null ? String(product.category) : null,
+    item_subcategory: null,
+    photo_url: product?.preview ?? null,
+    item_type: isFractional ? 'weight' : 'piece',
+    avg_weight: null,
+    pack: product?.unit ?? null,
+    price: toNumber(product?.price, 0),
+    item_stock: itemStock,
+    reserve: Math.max(itemStock - availableQty, 0),
+    available_qty: availableQty,
+  }
+}
+
+function mapParitetOrderLineToFront(item: any): OrderLine {
+  const product = item?.product || {}
+  const mappedProduct = mapParitetProductToStoreItem(product)
+  const qty = toNumber(item?.count, 0)
+  const price = toNumber(item?.price, mappedProduct.price)
+
+  return {
+    order_line_id: item?.id != null ? toNumber(item.id, 0) : null,
+    good_id: mappedProduct.item,
+    good_name: mappedProduct.item_name,
+    unit: mappedProduct.pack || '',
+    id: mappedProduct.item,
+    name: mappedProduct.item_name,
+    code: mappedProduct.code,
+    isfractional: mappedProduct.isfractional,
+    item: mappedProduct.item,
+    item_name: mappedProduct.item_name,
+    photo_url: mappedProduct.photo_url,
+    item_type: mappedProduct.item_type,
+    avg_weight: mappedProduct.avg_weight,
+    pack: mappedProduct.pack,
+    qty,
+    price,
+    qty_final: qty,
+    line_sum: qty * price,
+    item_stock: mappedProduct.item_stock,
+    reserve: mappedProduct.reserve,
+    available_qty: mappedProduct.available_qty,
+    max_qty_final: qty + mappedProduct.available_qty,
+  }
+}
+
+function mapStoreItemToOrderLine(product: StoreItem): OrderLine {
+  const qty = product.item_type === 'piece' ? 1 : 1
+  const tempLineId = -Date.now() - product.item
+
+  return {
+    order_line_id: tempLineId,
+    good_id: product.item,
+    good_name: product.item_name,
+    unit: product.pack || '',
+    id: product.item,
+    name: product.item_name,
+    code: product.code ?? null,
+    isfractional: product.isfractional,
+    item: product.item,
+    item_name: product.item_name,
+    photo_url: product.photo_url,
+    item_type: product.item_type,
+    avg_weight: product.avg_weight,
+    pack: product.pack,
+    qty,
+    price: product.price,
+    qty_final: qty,
+    line_sum: qty * product.price,
+    item_stock: product.item_stock,
+    reserve: product.reserve,
+    available_qty: Math.max(product.available_qty - qty, 0),
+    max_qty_final: product.available_qty,
+  }
+}
+
+function mapParitetOrderToFrontResponse(data: any, foundUser: FoundUser, selectedStore: Store): OrderDetailsResponse {
+  const payload = data?.payload || data || {}
+  const lines = Array.isArray(payload.items)
+    ? payload.items.map(mapParitetOrderLineToFront)
+    : Array.isArray(data?.lines)
+      ? data.lines
+      : []
+
+  const orderSum = toNumber(payload.price, lines.reduce((sum: number, line: OrderLine) => sum + toNumber(line.line_sum, 0), 0))
+
+  return {
+    ok: true,
+    readonly: payload.canedit === false || data?.readonly === true,
+    order: {
+      order_number: toNumber(payload.number ?? payload.id ?? data?.order?.order_number, 0),
+      user_account: foundUser.user_account,
+      store_id: selectedStore.store_id,
+      status: String(payload.state ?? data?.order?.status ?? ''),
+      status_label: String(payload.state ?? data?.order?.status_label ?? 'Заказ'),
+      order_sum: orderSum,
+      user_phone: foundUser.user_phone,
+      user_name: foundUser.user_name,
+      user_fam: foundUser.user_fam,
+      user_otch: foundUser.user_otch,
+      user_balance: foundUser.balance,
+      user_photo_url: foundUser.photo_url,
+    },
+    store: data?.store || {
+      store_id: selectedStore.store_id,
+      owner_account: selectedStore.owner_account || 0,
+      owner_balance: selectedStore.owner_balance || 0,
+      cash_balance: 0,
+      cash_limit: 0,
+    },
+    lines,
+  }
 }
 
 function App() {
@@ -1424,30 +1619,10 @@ async function openOrder(orderNumber: number) {
         throw new Error(data?.detail || 'Не удалось открыть заказ')
       }
   
-      const data: OrderDetailsResponse = await res.json()
-  
-      // 🔥 ВАЖНО: подмешиваем user из search
-      const enrichedData: OrderDetailsResponse = {
-        ...data,
-        order: {
-          ...data.order,
-          user_account: foundUser.user_account,
-          user_phone: foundUser.user_phone,
-          user_name: foundUser.user_name,
-          user_fam: foundUser.user_fam,
-          user_otch: foundUser.user_otch,
-          user_balance: foundUser.balance,
-          user_photo_url: foundUser.photo_url,
-        }
-      }
-  
-      setOrderDetails(prev => ({
-        ...prev,
-        ...enrichedData,
-        lines: (enrichedData.lines || []).filter(
-          (line) => Number(line.qty_final || 0) > 0
-        ),
-      }))
+      const data = await res.json()
+      const normalizedData = mapParitetOrderToFrontResponse(data, foundUser, selectedStore)
+
+      setOrderDetails(normalizedData)
   
     } catch (e: any) {
       setError(e.message || 'Ошибка открытия заказа')
@@ -1654,34 +1829,33 @@ async function openOrder(orderNumber: number) {
 
   async function loadStoreItems(
     query = itemSearchQuery,
-    category = selectedItemCategory,
-    subcategory = selectedItemSubcategory
+    _category = selectedItemCategory,
+    _subcategory = selectedItemSubcategory
   ) {
     if (!cashier || !selectedStore) return
+
+    const normalizedQuery = query.trim()
 
     setItemsLoading(true)
     setError('')
 
     try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-        limit: '100',
+      const params = buildItemSearchParams(normalizedQuery)
+      const queryString = params.toString()
+      const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
+
+      console.debug('[cashier-items-search]', {
+        query: normalizedQuery,
+        url: searchUrl,
+        store_id: selectedStore.store_id,
       })
 
-      if (query.trim()) {
-        params.set('q', query.trim())
-      }
-
-      if (category.trim()) {
-        params.set('category', category.trim())
-      }
-
-      if (subcategory.trim()) {
-        params.set('subcategory', subcategory.trim())
-      }
-
-      const res = await apiFetch(`${API_BASE}/cashier/items?${params.toString()}`)
+      const res = await apiFetch(searchUrl, {
+        headers: {
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -1689,7 +1863,10 @@ async function openOrder(orderNumber: number) {
       }
 
       const data = await res.json()
-      setStoreItems(data.items || [])
+      const goods = Array.isArray(data?.goods) ? data.goods : Array.isArray(data?.payload?.goods) ? data.payload.goods : []
+
+      setStoreItems(goods.map(mapParitetProductToStoreItem))
+      setItemCategories([])
     } catch (e: any) {
       setStoreItems([])
       setError(e.message || 'Ошибка загрузки товаров')
@@ -1698,66 +1875,71 @@ async function openOrder(orderNumber: number) {
     }
   }
 
-  async function loadItemCategories() {
-    if (!cashier || !selectedStore) return
-
-    try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-      })
-
-      const res = await apiFetch(`${API_BASE}/cashier/items/categories?${params.toString()}`)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось загрузить категории')
-      }
-
-      const data = await res.json()
-      setItemCategories(data.categories || [])
-    } catch (e: any) {
-      setItemCategories([])
-      setError(e.message || 'Ошибка загрузки категорий')
-    }
-  }
-
   async function openItemPicker() {
     setItemPickerOpen(true)
     setItemSearchQuery('')
     setSelectedItemCategory('')
     setSelectedItemSubcategory('')
-    await loadItemCategories()
+    setStoreItems([])
+    setItemCategories([])
     await loadStoreItems('', '', '')
   }
 
+  useEffect(() => {
+    if (!itemPickerOpen) return
+
+    const timer = window.setTimeout(() => {
+      void loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [itemPickerOpen, itemSearchQuery, selectedItemCategory, selectedItemSubcategory])
+
+  function updateOrderLinesLocally(updater: (lines: OrderLine[]) => OrderLine[]) {
+    setOrderDetails((prev) => {
+      if (!prev) return prev
+
+      const nextLines = updater(prev.lines || [])
+      const nextOrderSum = nextLines
+        .filter((line) => Number(line.qty_final || 0) > 0)
+        .reduce((sum, line) => sum + toNumber(line.line_sum, 0), 0)
+
+      return {
+        ...prev,
+        order: {
+          ...prev.order,
+          order_sum: nextOrderSum,
+        },
+        lines: nextLines,
+      }
+    })
+  }
+
   async function addItemToCurrentOrder(item: StoreItem) {
-    if (!cashier || !selectedStore || !orderDetails) return
+    if (!orderDetails) return
 
     setItemsLoading(true)
     setError('')
 
     try {
-      const res = await apiFetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            item: item.item,
-            device_id: 'web',
-          }),
+      updateOrderLinesLocally((lines) => {
+        const existingIndex = lines.findIndex((line) => line.item === item.item || line.good_id === item.item)
+
+        if (existingIndex >= 0) {
+          return lines.map((line, index) => {
+            if (index !== existingIndex) return line
+
+            const step = line.item_type === 'piece' ? 1 : 1
+            const nextQty = toNumber(line.qty_final, 0) + step
+            return recalcOrderLine(line, nextQty)
+          })
         }
-      )
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось добавить товар')
-      }
+        return [...lines, mapStoreItemToOrderLine(item)]
+      })
 
-      await openOrder(orderDetails.order.order_number)
       await loadStoreItems(itemSearchQuery)
     } catch (e: any) {
       setError(e.message || 'Ошибка добавления товара')
@@ -1769,10 +1951,10 @@ async function openOrder(orderNumber: number) {
   async function addItemByCode() {
     if (!cashier || !selectedStore || !orderDetails) return
 
-    const itemCode = Number(quickItemCode.trim())
+    const itemCode = quickItemCode.trim()
 
-    if (!itemCode || itemCode <= 0) {
-      setError('Введите корректный код товара')
+    if (!itemCode) {
+      setError('Введите код или штрихкод товара')
       return
     }
 
@@ -1780,28 +1962,50 @@ async function openOrder(orderNumber: number) {
     setError('')
 
     try {
-      const res = await apiFetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            item: itemCode,
-            device_id: 'web',
-          }),
-        }
-      )
+      const params = buildItemSearchParams(itemCode)
+      const queryString = params.toString()
+      const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
+
+      console.debug('[cashier-items-search-by-code]', {
+        query: itemCode,
+        url: searchUrl,
+        store_id: selectedStore.store_id,
+      })
+
+      const res = await apiFetch(searchUrl, {
+        headers: {
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось добавить товар по коду')
+        throw new Error(data?.detail || 'Не удалось найти товар по коду')
       }
 
-      const orderNumber = orderDetails.order.order_number
+      const data = await res.json()
+      const goods = Array.isArray(data?.goods) ? data.goods : Array.isArray(data?.payload?.goods) ? data.payload.goods : []
+      const foundItem = goods[0] ? mapParitetProductToStoreItem(goods[0]) : null
+
+      if (!foundItem) {
+        throw new Error('Товар по коду не найден')
+      }
+
+      updateOrderLinesLocally((lines) => {
+        const existingIndex = lines.findIndex((line) => line.item === foundItem.item || line.good_id === foundItem.item)
+
+        if (existingIndex >= 0) {
+          return lines.map((line, index) => {
+            if (index !== existingIndex) return line
+            return recalcOrderLine(line, toNumber(line.qty_final, 0) + 1)
+          })
+        }
+
+        return [...lines, mapStoreItemToOrderLine(foundItem)]
+      })
+
       setQuickItemCode('')
-      await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка добавления товара по коду')
     } finally {
@@ -1836,13 +2040,13 @@ async function openOrder(orderNumber: number) {
     if (!orderDetails || orderDetails.readonly || deleteLineConfirmOpen) return
 
     lineSwipeRef.current = {
-      lineId: line.order_line_id,
+      lineId: getOrderLineUiId(line),
       startX: e.clientX,
       startY: e.clientY,
     }
 
     setSwipeAnimatingLineId(null)
-    setSwipeDragLineId(line.order_line_id)
+    setSwipeDragLineId(getOrderLineUiId(line))
     setSwipeDragX(0)
 
     try {
@@ -1855,7 +2059,7 @@ async function openOrder(orderNumber: number) {
   function handleLinePointerMove(e: any, line: OrderLine) {
     const swipe = lineSwipeRef.current
 
-    if (!swipe || swipe.lineId !== line.order_line_id) {
+    if (!swipe || swipe.lineId !== getOrderLineUiId(line)) {
       return
     }
 
@@ -1881,7 +2085,7 @@ async function openOrder(orderNumber: number) {
   function handleLinePointerUp(e: any, line: OrderLine) {
     const swipe = lineSwipeRef.current
 
-    if (!swipe || swipe.lineId !== line.order_line_id) {
+    if (!swipe || swipe.lineId !== getOrderLineUiId(line)) {
       setSwipeDragLineId(null)
       setSwipeDragX(0)
       lineSwipeRef.current = null
@@ -1905,11 +2109,11 @@ async function openOrder(orderNumber: number) {
 
       const commitX = Math.max(0, Math.min(deltaX, 220))
 
-      swipedLineIdRef.current = line.order_line_id
+      swipedLineIdRef.current = getOrderLineUiId(line)
       setSwipeCommitX(commitX)
       setSwipeDragLineId(null)
       setSwipeDragX(0)
-      setSwipeAnimatingLineId(line.order_line_id)
+      setSwipeAnimatingLineId(getOrderLineUiId(line))
 
       window.setTimeout(() => {
         setSwipeAnimatingLineId(null)
@@ -1934,7 +2138,7 @@ async function openOrder(orderNumber: number) {
   }
 
   function handleLineRowClick(line: OrderLine) {
-    if (swipedLineIdRef.current === line.order_line_id) {
+    if (swipedLineIdRef.current === getOrderLineUiId(line)) {
       swipedLineIdRef.current = null
       return
     }
@@ -2048,7 +2252,7 @@ async function openOrder(orderNumber: number) {
   }
 
   async function saveQtyDraft() {
-    if (!cashier || !selectedStore || !orderDetails || !qtyDialogLine) return
+    if (!orderDetails || !qtyDialogLine) return
 
     const nextQty = Number(qtyDraft)
 
@@ -2061,55 +2265,18 @@ async function openOrder(orderNumber: number) {
     setError('')
 
     try {
-      const orderNumber = orderDetails.order.order_number
+      const targetLineId = getOrderLineUiId(qtyDialogLine)
 
-      if (nextQty <= 0) {
-        const res = await apiFetch(
-          `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/delete`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              cashier_account: cashier.cashier_account,
-              store_id: selectedStore.store_id,
-              device_id: 'web',
-            }),
-          }
+      updateOrderLinesLocally((lines) =>
+        lines.map((line) =>
+          getOrderLineUiId(line) === targetLineId
+            ? recalcOrderLine(line, nextQty)
+            : line
         )
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => null)
-          throw new Error(data?.detail || 'Не удалось удалить товар')
-        }
-
-        setQtyDialogLine(null)
-        setQtyDraft('')
-        await openOrder(orderNumber)
-        return
-      }
-
-      const res = await apiFetch(
-        `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/qty`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            qty_final: nextQty,
-            device_id: 'web',
-          }),
-        }
       )
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось изменить количество')
-      }
 
       setQtyDialogLine(null)
       setQtyDraft('')
-      await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка изменения количества')
     } finally {
@@ -2132,39 +2299,27 @@ async function openOrder(orderNumber: number) {
   async function deleteQtyLine(lineArg?: OrderLine | null) {
     const lineToDelete = lineArg || deleteLineDialogLine || qtyDialogLine
 
-    if (!cashier || !selectedStore || !orderDetails || !lineToDelete) return
+    if (!orderDetails || !lineToDelete) return
 
     setQtySaving(true)
     setError('')
 
     try {
-      const orderNumber = orderDetails.order.order_number
+      const targetLineId = getOrderLineUiId(lineToDelete)
 
-      const res = await apiFetch(
-        `${API_BASE}/cashier/orders/${orderNumber}/lines/${lineToDelete.order_line_id}/delete`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            device_id: 'web',
-          }),
-        }
+      updateOrderLinesLocally((lines) =>
+        lines.map((line) =>
+          getOrderLineUiId(line) === targetLineId
+            ? recalcOrderLine(line, 0)
+            : line
+        )
       )
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось удалить товар')
-      }
 
       setDeleteLineConfirmOpen(false)
       setDeleteLineDialogLine(null)
       setSwipeAnimatingLineId(null)
       setQtyDialogLine(null)
       setQtyDraft('')
-
-      await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка удаления товара')
     } finally {
@@ -2354,6 +2509,7 @@ async function openOrder(orderNumber: number) {
   if (selectedStore && cashier && orderDetails) {
     const order = orderDetails.order
     const fio = `${order.user_fam ?? ''} ${order.user_name ?? ''} ${order.user_otch ?? ''}`.trim()
+    const activeOrderLines = (orderDetails.lines || []).filter((line) => Number(line.qty_final || 0) > 0)
 
     return (
       <div className="app">
@@ -2413,7 +2569,7 @@ async function openOrder(orderNumber: number) {
 
             {error && <div className="error">{error}</div>}
 
-            {orderDetails.lines.length === 0 ? (
+            {activeOrderLines.length === 0 ? (
               <div className="emptyOrder">
                 В заказе пока нет товаров
               </div>
@@ -2426,27 +2582,27 @@ async function openOrder(orderNumber: number) {
                   <span>Сумма</span>
                 </div>
 
-                {orderDetails.lines.map((line) => (
+                {activeOrderLines.map((line) => (
                   <button
                     className={[
                       'lineRow',
                       line.item_type === 'weight' ? 'weightLineRow' : '',
                       'swipeLineRow',
-                      swipeDragLineId === line.order_line_id ? 'swipeDragging' : '',
-                      swipeAnimatingLineId === line.order_line_id ? 'swipeDeleteAnimating' : '',
+                      swipeDragLineId === getOrderLineUiId(line) ? 'swipeDragging' : '',
+                      swipeAnimatingLineId === getOrderLineUiId(line) ? 'swipeDeleteAnimating' : '',
                     ].filter(Boolean).join(' ')}
-                    key={line.order_line_id}
+                    key={getOrderLineUiId(line)}
                     onPointerDown={(e) => handleLinePointerDown(e, line)}
                     onPointerUp={(e) => handleLinePointerUp(e, line)}
                     onPointerMove={(e) => handleLinePointerMove(e, line)}
                     onPointerCancel={handleLinePointerCancel}
                     style={
-                      swipeDragLineId === line.order_line_id
+                      swipeDragLineId === getOrderLineUiId(line)
                         ? {
                             transform: `translateX(${swipeDragX}px)`,
                             opacity: Math.max(0.72, 1 - swipeDragX / 420),
                           }
-                        : swipeAnimatingLineId === line.order_line_id
+                        : swipeAnimatingLineId === getOrderLineUiId(line)
                           ? ({
                               '--swipe-start-x': `${swipeCommitX}px`,
                             } as any)
@@ -2504,14 +2660,14 @@ async function openOrder(orderNumber: number) {
               <button
                 className="primary"
                 onClick={payOrder}
-                disabled={orderDetails.readonly || orderDetails.lines.length === 0 || payLoading}
+                disabled={orderDetails.readonly || activeOrderLines.length === 0 || payLoading}
               >
                 {payLoading ? 'Оплачиваем...' : 'Оплатить'}
               </button>
               <button
                 className="secondary"
                 onClick={() => openReceipt(orderDetails.order.order_number)}
-                disabled={orderDetails.lines.length === 0}
+                disabled={activeOrderLines.length === 0}
               >
                 Чек
               </button>
@@ -2610,7 +2766,7 @@ async function openOrder(orderNumber: number) {
 
                       <div className="receiptLines">
                         {receiptData.lines.map((line) => (
-                          <div className="receiptLine" key={line.order_line_id}>
+                          <div className="receiptLine" key={getOrderLineUiId(line)}>
                             <div>
                               <b>{line.item_name}</b>
                               <span>Код {line.item}</span>
@@ -2849,7 +3005,7 @@ async function openOrder(orderNumber: number) {
                   <div className="itemPickerHeader">
                     <div>
                       <h2>Добавить товар</h2>
-                      <p className="muted">Поиск по коду товара, названию, категории или подкатегории</p>
+                      <p className="muted">Автопоиск по штрихкоду или названию</p>
                     </div>
                     <button className="secondary" onClick={() => setItemPickerOpen(false)}>
                       Закрыть
@@ -2861,19 +3017,7 @@ async function openOrder(orderNumber: number) {
                       placeholder="Введите код или название товара"
                       value={itemSearchQuery}
                       onChange={(e) => setItemSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)
-                        }
-                      }}
                     />
-                    <button
-                      className="primary"
-                      onClick={() => loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)}
-                      disabled={itemsLoading}
-                    >
-                      {itemsLoading ? 'Ищем...' : 'Найти'}
-                    </button>
                     <button
                       className="secondary"
                       onClick={() => {
@@ -2883,11 +3027,12 @@ async function openOrder(orderNumber: number) {
                         loadStoreItems('', '', '')
                       }}
                     >
-                      Все
+                      Очистить
                     </button>
                   </div>
 
-                  <div className="categoryPickers">
+                  {itemCategories.length > 0 && (
+                    <div className="categoryPickers">
                     <select
                       value={selectedItemCategory}
                       onChange={(e) => {
@@ -2921,7 +3066,8 @@ async function openOrder(orderNumber: number) {
                         </option>
                       ))}
                     </select>
-                  </div>
+                    </div>
+                  )}
 
                   {error && <div className="error">{error}</div>}
 
@@ -2962,6 +3108,7 @@ async function openOrder(orderNumber: number) {
                           <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
                           <span>Резерв: {formatQty(item.reserve, item.item_type)}</span>
                           <span>Доступно: {formatQty(item.available_qty, item.item_type)}</span>
+                          <span>Добавить</span>
                         </div>
                       </button>
                     ))}
@@ -3212,7 +3359,7 @@ async function openOrder(orderNumber: number) {
                         loadStockSearchItems('')
                       }}
                     >
-                      Все
+                      Очистить
                     </button>
                   </div>
 
