@@ -96,9 +96,9 @@ async def save_order(
             raise HTTPException(400, "Нет товаров для сохранения")
 
         # =========================
-        # 2. ВЫЗОВ PARITET
+        # 2. СОХРАНЕНИЕ В PARITET
         # =========================
-        await paritet_create_order(
+        create_result = await paritet_create_order(
             token=session.token,
             tvt_id=payload.store_id,
             user_id=payload.user_id,
@@ -107,16 +107,23 @@ async def save_order(
         )
 
         # =========================
-        # 3. ПЕРЕЧИТАТЬ ЗАКАЗ
+        # 3. ОПРЕДЕЛЯЕМ НОМЕР ЗАКАЗА
+        # =========================
+        # если был новый заказ → берем из ответа
+        actual_order_number = int(create_result.get("number") or order_number)
+
+        # =========================
+        # 4. ПЕРЕЧИТЫВАЕМ АКТУАЛЬНЫЙ ЗАКАЗ
         # =========================
         result = await paritet_get_order(
             token=session.token,
             tvt_id=payload.store_id,
-            order_number=order_number,
+            order_number=actual_order_number,
         )
 
         return {
             "ok": True,
+            "order_number": actual_order_number,
             "readonly": result["readonly"],
             "order": result["order"],
             "lines": result["lines"],

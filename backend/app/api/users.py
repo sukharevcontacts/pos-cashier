@@ -97,6 +97,7 @@ async def search_shareholder(
                 "cash_limit": 0,
             },
             "user": {
+                "user_id": user_id,
                 "user_account": user_account,
                 "user_phone": user.get("phone"),
                 "user_name": user.get("name"),
