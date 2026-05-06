@@ -268,29 +268,43 @@ function toNumber(value: any, fallback = 0) {
   return Number.isFinite(n) ? n : fallback
 }
 
-function isNumericSearch(value: string) {
-  return /^\d+$/.test(value.trim())
+type ItemSearchParam = {
+  key: 'ids' | 'barcode' | 'q'
+  value: string
+}
+
+function getItemSearchParam(query: string): ItemSearchParam | null {
+  const value = query.trim()
+
+  if (!value) {
+    return null
+  }
+
+  const isOnlyDigits = /^\d+$/.test(value)
+
+  if (!isOnlyDigits) {
+    return { key: 'q', value }
+  }
+
+  // Короткое число в кассе считаем ID товара Paritet, длинное число — штрихкод.
+  return value.length >= 8 ? { key: 'barcode', value } : { key: 'ids', value }
 }
 
 function buildItemSearchParams(query: string) {
-  const normalizedQuery = query.trim()
   const params = new URLSearchParams()
+  const searchParam = getItemSearchParam(query)
 
-  if (!normalizedQuery) {
+  if (!searchParam) {
     return params
   }
 
-  if (isNumericSearch(normalizedQuery)) {
-    // Короткое число в кассе считаем ID товара Paritet, длинное число — штрихкод.
-    if (normalizedQuery.length >= 8) {
-      params.set('barcode', normalizedQuery)
-    } else {
-      params.set('ids', normalizedQuery)
-    }
-  } else {
-    params.set('q', normalizedQuery)
+  // Защита от регресса: barcode никогда не должен получать текстовый запрос.
+  if (searchParam.key === 'barcode' && !/^\d+$/.test(searchParam.value)) {
+    params.set('q', searchParam.value)
+    return params
   }
 
+  params.set(searchParam.key, searchParam.value)
   return params
 }
 
@@ -1846,6 +1860,7 @@ async function openOrder(orderNumber: number) {
 
       console.debug('[cashier-items-search]', {
         query: normalizedQuery,
+        searchParam: getItemSearchParam(normalizedQuery),
         url: searchUrl,
         store_id: selectedStore.store_id,
       })
@@ -1968,6 +1983,7 @@ async function openOrder(orderNumber: number) {
 
       console.debug('[cashier-items-search-by-code]', {
         query: itemCode,
+        searchParam: getItemSearchParam(itemCode),
         url: searchUrl,
         store_id: selectedStore.store_id,
       })
@@ -2639,7 +2655,7 @@ async function openOrder(orderNumber: number) {
                 disabled={orderDetails.readonly}
               />
               <button className="primary" onClick={handleAddButton} disabled={orderDetails.readonly || itemsLoading}>
-                {quickItemCode.trim() ? 'Добавить по коду' : 'Выбрать товар'}
+                {quickItemCode.trim() ? 'Добавить товар' : 'Выбрать товар'}
               </button>
             </div>
 

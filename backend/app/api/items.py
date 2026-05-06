@@ -46,6 +46,7 @@ async def search_products(
 
         # 🔹 поиск по названию
         if q:
+            warehouse_id = session.warehouse_id
             payload = await get_catalog(
                 token=session.token,
                 tvt_id=store_id,
@@ -55,7 +56,7 @@ async def search_products(
                     "preview_width": 240,
                     "preview_height": 320,
                     "showavailable": True,
-                    "warehouse": store_id
+                    "warehouse": warehouse_id
                 }
             )
 
