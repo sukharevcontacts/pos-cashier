@@ -34,6 +34,20 @@ type LoginResponse = {
   stores: Store[]
 }
 
+function toSafeInt(value: unknown, fallback = 0) {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.trunc(n) : fallback
+}
+
+function getErrorMessage(data: any, fallback: string) {
+  if (!data?.detail) return fallback
+  if (typeof data.detail === 'string') return data.detail
+  if (Array.isArray(data.detail)) {
+    return data.detail.map((item: any) => item?.msg || JSON.stringify(item)).join('; ') || fallback
+  }
+  return fallback
+}
+
 type FoundUser = {
   user_id?: number | null
   user_account: number
@@ -1882,7 +1896,9 @@ async function openOrder(orderNumber: number) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cashier_account: Number(cashier.cashier_account),
+            // Backend save endpoint currently requires an int, but Paritet save logic does not use it.
+            // /cashier/search may return cashier.cashier_account = null, so keep payload valid.
+            cashier_account: toSafeInt(cashier.cashier_account, 0),
             store_id: selectedStore.store_id,
             user_id: userId,
             lines: payloadLines,
@@ -1893,7 +1909,7 @@ async function openOrder(orderNumber: number) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось сохранить заказ')
+        throw new Error(getErrorMessage(data, 'Не удалось сохранить заказ'))
       }
 
       const saved = await res.json()
