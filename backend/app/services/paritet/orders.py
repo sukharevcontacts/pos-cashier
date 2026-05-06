@@ -146,3 +146,27 @@ async def create_order(
         raise Exception(data.get("error") or "create_order failed")
 
     return data.get("payload")
+
+
+async def cancel_order(
+    token: str,
+    tvt_id: int,
+    order_number: int,
+):
+    data = await paritet_client.post(
+        action="cancel_order",
+        headers={
+            "Access-Token": token,
+            "TVT-ID": str(tvt_id),
+        },
+        json={
+            "order": int(order_number),
+            "preview_width": 240,
+            "preview_height": 320,
+        },
+    )
+
+    if data.get("code") != 200:
+        raise Exception(data.get("error") or "cancel_order failed")
+
+    return data.get("payload") or {}

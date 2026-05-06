@@ -6,6 +6,7 @@ from app.core.session import session_store
 from app.services.paritet.orders import (
     get_order_details as paritet_get_order,
     create_order as paritet_create_order,
+    cancel_order as paritet_cancel_order,
 )
 
 import logging
@@ -136,6 +137,36 @@ async def save_order(
         logger.exception("Ошибка сохранения заказа")
         raise HTTPException(400, str(e))
 
+
+# =========================
+# CANCEL ORDER
+# =========================
+
+@router.post("/{order_number}/cancel")
+async def cancel_order_route(
+    order_number: int,
+    store_id: int = Query(...),
+    x_session_id: str = Header(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        await paritet_cancel_order(
+            token=session.token,
+            tvt_id=store_id,
+            order_number=order_number,
+        )
+
+        return {
+            "ok": True,
+            "order_number": order_number,
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка отмены заказа")
+        raise HTTPException(400, str(e))
 
 # =========================
 # LOCKS (оставляем локально)

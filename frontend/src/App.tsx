@@ -48,6 +48,19 @@ function getErrorMessage(data: any, fallback: string) {
   return fallback
 }
 
+function isOrderCancelable(order: FoundOrder) {
+  const status = String(order.status || '').toLowerCase()
+  const statusLabel = String(order.status_label || '').toLowerCase()
+
+  return (
+    status === 'in_progress' ||
+    status.includes('передан') ||
+    statusLabel.includes('передан') ||
+    status.includes('выполнение') ||
+    statusLabel.includes('выполнение')
+  )
+}
+
 type FoundUser = {
   user_id?: number | null
   user_account: number
@@ -363,6 +376,16 @@ function getOrderLineRowStyle(line: OrderLine, dragLineId: number | null, animat
   return Object.keys(baseStyle).length ? baseStyle : undefined
 }
 
+function getOrderCardSwipeStyle(orderNumber: number, dragOrderNumber: number | null, dragX: number) {
+  if (dragOrderNumber !== orderNumber) return undefined
+
+  return {
+    transform: `translateX(${dragX}px)`,
+    opacity: Math.max(0.78, 1 - Math.abs(dragX) / 420),
+    touchAction: 'pan-y',
+  } as any
+}
+
 function recalcOrderLine(line: OrderLine, nextQty: number): OrderLine {
   const normalizedQty = Math.max(0, toNumber(nextQty, 0))
   return {
@@ -603,6 +626,11 @@ function App() {
 
   const [orderDetails, setOrderDetails] = useState<OrderDetailsResponse | null>(null)
   const [deleteOrderDialog, setDeleteOrderDialog] = useState<FoundOrder | null>(null)
+  const [cancelOrderLoading, setCancelOrderLoading] = useState(false)
+  const [orderSwipeDragNumber, setOrderSwipeDragNumber] = useState<number | null>(null)
+  const [orderSwipeDragX, setOrderSwipeDragX] = useState(0)
+  const orderSwipeRef = useRef<{ orderNumber: number; startX: number; startY: number } | null>(null)
+  const swipedOrderNumberRef = useRef<number | null>(null)
   const [orderLoading, setOrderLoading] = useState(false)
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const [receiptLoading, setReceiptLoading] = useState(false)
@@ -1199,6 +1227,35 @@ function App() {
     }
   }
 
+
+  async function searchOrders(keepSelectedOrderNumber?: number | null) {
+    if (!cashier || !selectedStore || !foundUser) return
+
+    const params = new URLSearchParams({
+      cashier_account: String(cashier.cashier_account),
+      store_id: String(selectedStore.store_id),
+      q: String(foundUser.user_account),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось обновить список заказов'))
+    }
+
+    const data: SearchResponse = await res.json()
+
+    setFoundUser(data.user)
+    setOrders(data.orders)
+    setStoreState(data.store)
+
+    if (keepSelectedOrderNumber) {
+      const exists = data.orders.some((o) => o.order_number === keepSelectedOrderNumber)
+      setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
+    }
+  }
+
   function updateNewUserField(field: keyof typeof newUserForm, value: string) {
     setNewUserForm((prev) => ({
       ...prev,
@@ -1610,46 +1667,139 @@ function App() {
     setItemPickerOpen(false)
   }
 
-  async function deleteOrderFromList(order: FoundOrder) {
-    if (!cashier || !selectedStore) return
+  function handleOrderPointerDown(e: any, order: FoundOrder) {
+    if (!isOrderCancelable(order) || cancelOrderLoading) return
 
-    if (order.status !== 'in_progress') {
-      setError('Удалить можно только заказ в статусе Передан на выполнение')
+    orderSwipeRef.current = {
+      orderNumber: order.order_number,
+      startX: e.clientX,
+      startY: e.clientY,
+    }
+
+    setOrderSwipeDragNumber(order.order_number)
+    setOrderSwipeDragX(0)
+
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+    } catch {
+      // Pointer capture может быть недоступен на части браузеров.
+    }
+  }
+
+  function handleOrderPointerMove(e: any, order: FoundOrder) {
+    const swipe = orderSwipeRef.current
+
+    if (!swipe || swipe.orderNumber !== order.order_number) {
       return
     }
 
+    const deltaX = e.clientX - swipe.startX
+    const deltaY = e.clientY - swipe.startY
 
-    setError('')
-    setSearchLoading(true)
+    if (Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      setOrderSwipeDragNumber(null)
+      setOrderSwipeDragX(0)
+      orderSwipeRef.current = null
+      return
+    }
+
+    const nextX = Math.max(-170, Math.min(deltaX, 170))
+    setOrderSwipeDragX(nextX)
+
+    if (Math.abs(nextX) > 8) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+
+  function handleOrderPointerUp(e: any, order: FoundOrder) {
+    const swipe = orderSwipeRef.current
+
+    if (!swipe || swipe.orderNumber !== order.order_number) {
+      setOrderSwipeDragNumber(null)
+      setOrderSwipeDragX(0)
+      orderSwipeRef.current = null
+      return
+    }
+
+    const deltaX = e.clientX - swipe.startX
+    const deltaY = e.clientY - swipe.startY
+
+    orderSwipeRef.current = null
 
     try {
-      const res = await apiFetch(`${API_BASE}/cashier/orders/${order.order_number}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          device_id: 'web',
-        }),
-      })
+      e.currentTarget.releasePointerCapture?.(e.pointerId)
+    } catch {
+      // Не критично.
+    }
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось удалить заказ')
-      }
+    if (Math.abs(deltaX) > 95 && Math.abs(deltaY) < 65) {
+      e.preventDefault()
+      e.stopPropagation()
+      swipedOrderNumberRef.current = order.order_number
+      setOrderSwipeDragNumber(null)
+      setOrderSwipeDragX(0)
+      setDeleteOrderDialog(order)
+      return
+    }
 
-      setOrders((prev) => prev.filter((o) => o.order_number !== order.order_number))
+    setOrderSwipeDragNumber(null)
+    setOrderSwipeDragX(0)
+  }
 
-      if (selectedOrderNumber === order.order_number) {
+  function handleOrderPointerCancel() {
+    orderSwipeRef.current = null
+    setOrderSwipeDragNumber(null)
+    setOrderSwipeDragX(0)
+  }
+
+  function handleOrderCardClick(order: FoundOrder) {
+    if (swipedOrderNumberRef.current === order.order_number) {
+      swipedOrderNumberRef.current = null
+      return
+    }
+
+    openOrder(order.order_number)
+  }
+
+  async function cancelOrder(orderNumber: number) {
+    if (!cashier || !selectedStore) return null
+
+    const params = new URLSearchParams({
+      store_id: String(selectedStore.store_id),
+    })
+
+    const res = await apiFetch(
+      `${API_BASE}/cashier/orders/${orderNumber}/cancel?${params.toString()}`,
+      { method: 'POST' }
+    )
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось отменить заказ'))
+    }
+
+    return res.json()
+  }
+
+  async function handleCancelOrder(orderNumber: number) {
+    setError('')
+    setCancelOrderLoading(true)
+
+    try {
+      await cancelOrder(orderNumber)
+
+      if (selectedOrderNumber === orderNumber) {
         setSelectedOrderNumber(null)
+        setOrderDetails(null)
       }
 
-      await refreshCurrentUser(null)
-    } catch (e: any) {
-      setError(e.message || 'Ошибка удаления заказа')
-    } finally {
-      setSearchLoading(false)
+      await searchOrders(null)
       setDeleteOrderDialog(null)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка отмены заказа')
+    } finally {
+      setCancelOrderLoading(false)
     }
   }
 
@@ -3386,7 +3536,7 @@ async function openOrder(orderNumber: number) {
                 <button
                   className="secondary"
                   onClick={() => setDeleteOrderDialog(null)}
-                  disabled={searchLoading}
+                  disabled={cancelOrderLoading}
                 >
                   Закрыть
                 </button>
@@ -3394,7 +3544,7 @@ async function openOrder(orderNumber: number) {
 
               <div className="confirmDialogBody">
                 <p>
-                  Заказ будет удален, а зарезервированные товары вернутся в доступный остаток.
+                  Заказ будет отменен. После подтверждения список заказов пайщика обновится.
                 </p>
                 <div className="confirmDialogSummary">
                   <span>Сумма заказа</span>
@@ -3406,16 +3556,16 @@ async function openOrder(orderNumber: number) {
                 <button
                   className="secondary"
                   onClick={() => setDeleteOrderDialog(null)}
-                  disabled={searchLoading}
+                  disabled={cancelOrderLoading}
                 >
                   Отмена
                 </button>
                 <button
                   className="danger"
-                  onClick={() => deleteOrderFromList(deleteOrderDialog)}
-                  disabled={searchLoading}
+                  onClick={() => handleCancelOrder(deleteOrderDialog.order_number)}
+                  disabled={cancelOrderLoading}
                 >
-                  {searchLoading ? 'Удаляем...' : 'Удалить заказ'}
+                  {cancelOrderLoading ? 'Удаляем...' : 'Удалить заказ'}
                 </button>
               </div>
             </div>
@@ -4093,14 +4243,20 @@ async function openOrder(orderNumber: number) {
               {orders.map((order) => (
                 <div
                   key={order.order_number}
-                  className={
-                    order.order_number === selectedOrderNumber
-                      ? 'orderCard selected'
-                      : 'orderCard'
-                  }
-                  onClick={() => openOrder(order.order_number)}
+                  className={[
+                    order.order_number === selectedOrderNumber ? 'orderCard selected' : 'orderCard',
+                    isOrderCancelable(order) ? 'orderCardSwipeable' : '',
+                    orderSwipeDragNumber === order.order_number ? 'orderCardSwiping' : '',
+                  ].filter(Boolean).join(' ')}
+                  style={getOrderCardSwipeStyle(order.order_number, orderSwipeDragNumber, orderSwipeDragX)}
+                  onPointerDown={(e) => handleOrderPointerDown(e, order)}
+                  onPointerMove={(e) => handleOrderPointerMove(e, order)}
+                  onPointerUp={(e) => handleOrderPointerUp(e, order)}
+                  onPointerCancel={handleOrderPointerCancel}
+                  onClick={() => handleOrderCardClick(order)}
                   role="button"
                   tabIndex={0}
+                  title={isOrderCancelable(order) ? 'Свайп вправо или влево — удалить заказ' : undefined}
                 >
                   <div>
                     <b>Заказ № {order.order_number}</b>
@@ -4108,17 +4264,6 @@ async function openOrder(orderNumber: number) {
                   </div>
                   <div className="orderCardRight">
                     <div className="orderCardAmountRow">
-                      {order.status === 'in_progress' && (
-                        <button
-                          className="deleteOrderButton"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setDeleteOrderDialog(order)
-                          }}
-                        >
-                          Удалить
-                        </button>
-                      )}
                       <b>{formatMoney(order.order_sum)}</b>
                     </div>
                     <span>{order.delivery_date || 'без даты'}</span>
