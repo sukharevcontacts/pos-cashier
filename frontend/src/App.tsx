@@ -35,6 +35,7 @@ type LoginResponse = {
 }
 
 type FoundUser = {
+  user_id?: number | null
   user_account: number
   user_phone: string | null
   user_name: string | null
@@ -493,6 +494,36 @@ function mapParitetOrderToFrontResponse(data: any, foundUser: FoundUser, selecte
       cash_limit: 0,
     },
     lines,
+  }
+}
+
+
+function createLocalNewOrderDetails(foundUser: FoundUser, selectedStore: Store): OrderDetailsResponse {
+  return {
+    ok: true,
+    readonly: false,
+    order: {
+      order_number: 0,
+      user_account: foundUser.user_account,
+      store_id: selectedStore.store_id,
+      status: 'local_new',
+      status_label: 'Новый заказ',
+      order_sum: 0,
+      user_phone: foundUser.user_phone,
+      user_name: foundUser.user_name,
+      user_fam: foundUser.user_fam,
+      user_otch: foundUser.user_otch,
+      user_balance: foundUser.balance,
+      user_photo_url: foundUser.photo_url,
+    },
+    store: {
+      store_id: selectedStore.store_id,
+      owner_account: selectedStore.owner_account || 0,
+      owner_balance: selectedStore.owner_balance || 0,
+      cash_balance: 0,
+      cash_limit: 0,
+    },
+    lines: [],
   }
 }
 
@@ -1549,37 +1580,20 @@ function App() {
       return
     }
 
-    setError('')
-    setSearchLoading(true)
+    const userId = Number(foundUser.user_id || 0)
 
-    try {
-      const res = await apiFetch(`${API_BASE}/cashier/orders/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_account: foundUser.user_account,
-          device_id: 'web',
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось создать заказ')
-      }
-
-      const data = await res.json()
-      const newOrder = data.order as FoundOrder
-
-      setOrders((prev) => [newOrder, ...prev])
-      setSelectedOrderNumber(newOrder.order_number)
-      await refreshCurrentUser(newOrder.order_number)
-    } catch (e: any) {
-      setError(e.message || 'Ошибка создания заказа')
-    } finally {
-      setSearchLoading(false)
+    if (!userId) {
+      setError('Не удалось создать заказ: в данных пайщика нет user_id')
+      return
     }
+
+    setError('')
+    setSelectedOrderNumber(0)
+    setOrderDetails(createLocalNewOrderDetails(foundUser, selectedStore))
+    setQuickItemCode('')
+    setQuickItemMatches([])
+    setQuickItemDropdownOpen(false)
+    setItemPickerOpen(false)
   }
 
   async function deleteOrderFromList(order: FoundOrder) {
@@ -1837,20 +1851,41 @@ async function openOrder(orderNumber: number) {
   }
 
   async function saveOrder() {
-    if (!cashier || !selectedStore || !orderDetails) return
+    if (!cashier || !selectedStore || !orderDetails || !foundUser) return
+
+    const userId = Number(foundUser.user_id || 0)
+
+    if (!userId) {
+      setError('Не удалось сохранить заказ: в данных пайщика нет user_id')
+      return
+    }
+
+    const payloadLines = (orderDetails.lines || []).map((line) => ({
+      item: line.item,
+      qty_final: Number(line.qty_final || 0),
+    }))
+
+    if (!payloadLines.length) {
+      setError('Не удалось сохранить заказ: нет строк заказа')
+      return
+    }
 
     setSaveLoading(true)
     setError('')
 
     try {
+      const currentOrderNumber = Number(orderDetails.order.order_number || 0)
+
       const res = await apiFetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/save`,
+        `${API_BASE}/cashier/orders/${currentOrderNumber}/save`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
+            cashier_account: Number(cashier.cashier_account),
             store_id: selectedStore.store_id,
+            user_id: userId,
+            lines: payloadLines,
             device_id: 'web',
           }),
         }
@@ -1862,22 +1897,17 @@ async function openOrder(orderNumber: number) {
       }
 
       const saved = await res.json()
+      const savedOrderNumber = Number(saved?.order_number || saved?.order?.order_number || currentOrderNumber)
 
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.order_number === saved.order_number
-            ? {
-                ...o,
-                status: saved.status,
-                status_label: saved.status_label,
-                order_sum: saved.order_sum,
-              }
-            : o
-        )
-      )
+      if (!savedOrderNumber) {
+        throw new Error('Заказ сохранён, но сервер не вернул номер заказа')
+      }
 
-      setOrderDetails(null)
-      await refreshCurrentUser(saved.order_number)
+      setSelectedOrderNumber(savedOrderNumber)
+      setOrderDetails(mapParitetOrderToFrontResponse(saved, foundUser, selectedStore))
+
+      await refreshCurrentUser(savedOrderNumber)
+      await openOrder(savedOrderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка сохранения заказа')
     } finally {
@@ -2611,7 +2641,7 @@ async function openOrder(orderNumber: number) {
               ☰
             </button>
             <div>
-              <div className="title">Заказ № {order.order_number}</div>
+              <div className="title">{order.order_number > 0 ? `Заказ № ${order.order_number}` : 'Новый заказ'}</div>
               <div className="subtitle">
                 Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
               </div>
@@ -2818,14 +2848,14 @@ async function openOrder(orderNumber: number) {
               <button
                 className="primary"
                 onClick={payOrder}
-                disabled={orderDetails.readonly || activeOrderLines.length === 0 || payLoading}
+                disabled={orderDetails.readonly || orderDetails.order.order_number <= 0 || activeOrderLines.length === 0 || payLoading}
               >
                 {payLoading ? 'Оплачиваем...' : 'Оплатить'}
               </button>
               <button
                 className="secondary"
                 onClick={() => openReceipt(orderDetails.order.order_number)}
-                disabled={activeOrderLines.length === 0}
+                disabled={orderDetails.order.order_number <= 0 || activeOrderLines.length === 0}
               >
                 Чек
               </button>
