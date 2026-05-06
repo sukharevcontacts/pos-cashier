@@ -118,3 +118,31 @@ async def get_order_details(
         "lines": lines,
         "readonly": readonly,
     }
+
+
+async def create_order(
+    token: str,
+    tvt_id: int,
+    user_id: int,
+    order_number: int,
+    items: list[dict],
+):
+    payload = {
+        "user": user_id,
+        "order": int(order_number or 0),
+        "items": items,
+    }
+
+    data = await paritet_client.post(
+        action="create_order",
+        headers={
+            "Access-Token": token,
+            "TVT-ID": str(tvt_id),
+        },
+        json=payload,
+    )
+
+    if data.get("code") != 200:
+        raise Exception(data.get("error") or "create_order failed")
+
+    return data.get("payload")

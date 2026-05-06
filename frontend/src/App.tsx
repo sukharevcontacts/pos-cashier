@@ -95,6 +95,8 @@ type OrderLine = {
   name: string
   code?: string | null
   isfractional?: boolean
+  is_local?: boolean
+  is_dirty?: boolean
   item: number
   item_name: string
   photo_url: string | null
@@ -320,6 +322,32 @@ function getOrderLineUiId(line: { order_line_id?: number | null; item: number })
   return line.order_line_id ?? line.item
 }
 
+function isOrderLineUnsaved(line: OrderLine) {
+  return Boolean(line.is_local || line.is_dirty || (typeof line.order_line_id === 'number' && line.order_line_id < 0))
+}
+
+function getOrderLineRowStyle(line: OrderLine, dragLineId: number | null, animatingLineId: number | null, dragX: number, commitX: number) {
+  const lineId = getOrderLineUiId(line)
+  const baseStyle = isOrderLineUnsaved(line) ? { backgroundColor: '#fff7cc' } : {}
+
+  if (dragLineId === lineId) {
+    return {
+      ...baseStyle,
+      transform: `translateX(${dragX}px)`,
+      opacity: Math.max(0.72, 1 - dragX / 420),
+    }
+  }
+
+  if (animatingLineId === lineId) {
+    return {
+      ...baseStyle,
+      '--swipe-start-x': `${commitX}px`,
+    } as any
+  }
+
+  return Object.keys(baseStyle).length ? baseStyle : undefined
+}
+
 function recalcOrderLine(line: OrderLine, nextQty: number): OrderLine {
   const normalizedQty = Math.max(0, toNumber(nextQty, 0))
   return {
@@ -328,6 +356,7 @@ function recalcOrderLine(line: OrderLine, nextQty: number): OrderLine {
     qty_final: normalizedQty,
     line_sum: normalizedQty * toNumber(line.price, 0),
     max_qty_final: normalizedQty + toNumber(line.available_qty, 0),
+    is_dirty: true,
   }
 }
 
@@ -378,6 +407,8 @@ function mapParitetOrderLineToFront(item: any): OrderLine {
     name: mappedProduct.item_name,
     code: mappedProduct.code,
     isfractional: mappedProduct.isfractional,
+    is_local: false,
+    is_dirty: false,
     item: mappedProduct.item,
     item_name: mappedProduct.item_name,
     photo_url: mappedProduct.photo_url,
@@ -408,6 +439,8 @@ function mapStoreItemToOrderLine(product: StoreItem): OrderLine {
     name: product.item_name,
     code: product.code ?? null,
     isfractional: product.isfractional,
+    is_local: true,
+    is_dirty: true,
     item: product.item,
     item_name: product.item_name,
     photo_url: product.photo_url,
@@ -2646,6 +2679,7 @@ async function openOrder(orderNumber: number) {
                     className={[
                       'lineRow',
                       line.item_type === 'weight' ? 'weightLineRow' : '',
+                      isOrderLineUnsaved(line) ? 'unsavedLineRow' : '',
                       'swipeLineRow',
                       swipeDragLineId === getOrderLineUiId(line) ? 'swipeDragging' : '',
                       swipeAnimatingLineId === getOrderLineUiId(line) ? 'swipeDeleteAnimating' : '',
@@ -2655,18 +2689,7 @@ async function openOrder(orderNumber: number) {
                     onPointerUp={(e) => handleLinePointerUp(e, line)}
                     onPointerMove={(e) => handleLinePointerMove(e, line)}
                     onPointerCancel={handleLinePointerCancel}
-                    style={
-                      swipeDragLineId === getOrderLineUiId(line)
-                        ? {
-                            transform: `translateX(${swipeDragX}px)`,
-                            opacity: Math.max(0.72, 1 - swipeDragX / 420),
-                          }
-                        : swipeAnimatingLineId === getOrderLineUiId(line)
-                          ? ({
-                              '--swipe-start-x': `${swipeCommitX}px`,
-                            } as any)
-                          : undefined
-                    }
+                    style={getOrderLineRowStyle(line, swipeDragLineId, swipeAnimatingLineId, swipeDragX, swipeCommitX)}
                     onClick={() => handleLineRowClick(line)}
                   >
                     <span>
