@@ -2802,6 +2802,7 @@ async function openOrder(orderNumber: number) {
 
         await refreshCurrentUser(null, { updateCashierStatus: false })
         await fetchStatus()
+		setOrderPaymentQrDialog(null)
         setOrderDetails(null)
         setSelectedOrderNumber(null)
         setOrderPaymentMessage('Заказ оплачен')
