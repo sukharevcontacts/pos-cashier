@@ -170,3 +170,36 @@ async def cancel_order(
         raise Exception(data.get("error") or "cancel_order failed")
 
     return data.get("payload") or {}
+
+async def replenish_balance_qr(
+    token: str,
+    tvt_id: int,
+    user_id: int,
+    order_number: int,
+    amount: float,
+):
+    data = await paritet_client.post(
+        action="replenish_balance_qr",
+        headers={
+            "Access-Token": token,
+            "TVT-ID": str(tvt_id),
+        },
+        json={
+            "abonid": int(user_id),
+            "amount": float(amount),
+            "addcomission": 1,
+            "includedebt": 1,
+            "includebalance": 1,
+            "width": 300,
+            "height": 300,
+            "ttl": 15,
+            "sourcename": "POS",
+            "paymentpurpose": f"#order {order_number}#",
+            "redirecturl": "https://portmonet.ru",
+        },
+    )
+
+    if data.get("code") != 200:
+        raise Exception(data.get("error") or "replenish_balance_qr failed")
+
+    return data.get("payload") or {}

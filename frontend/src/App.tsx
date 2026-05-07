@@ -565,7 +565,7 @@ function createLocalNewOrderDetails(foundUser: FoundUser, selectedStore: Store):
 }
 
 function App() {
-  const [cashierAccount, setCashierAccount] = useState('1000728')
+  const [cashierAccount, setCashierAccount] = useState('')
   const [cashierPasswd, setCashierPasswd] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
