@@ -168,6 +168,71 @@ async def cancel_order_route(
         logger.exception("Ошибка отмены заказа")
         raise HTTPException(400, str(e))
 
+
+@router.post("/{order_number}/pay")
+async def generate_order_payment_qr(
+    order_number: int,
+    store_id: int = Query(...),
+    user_id: int = Query(...),
+    amount: float = Query(...),
+    x_session_id: str = Header(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        data = await paritet_replenish_balance_qr(
+            token=session.token,
+            tvt_id=store_id,
+            user_id=user_id,
+            order_number=order_number,
+            amount=amount,
+        )
+
+        return {
+            "ok": True,
+            "order_number": order_number,
+            "amount": data.get("amount"),
+            "qr_url": data.get("payload"),
+            "qr_base64": data.get("imagecontent"),
+            "image_type": data.get("imagemediatype"),
+            "ttl": 15,
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка генерации QR оплаты")
+        raise HTTPException(400, str(e))
+
+@router.post("/{order_number}/done")
+async def done_order_route(
+    order_number: int,
+    store_id: int = Query(...),
+    x_session_id: str = Header(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        data = await paritet_done_order(
+            token=session.token,
+            tvt_id=store_id,
+            order_number=order_number,
+        )
+
+        return {
+            "ok": data.get("code") == 200,
+            "order_number": order_number,
+            "error": data.get("error"),
+            "payload": data.get("payload"), 
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка проведения заказа")
+        raise HTTPException(400, str(e))
+
+
 # =========================
 # LOCKS (оставляем локально)
 # =========================

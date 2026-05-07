@@ -203,3 +203,26 @@ async def replenish_balance_qr(
         raise Exception(data.get("error") or "replenish_balance_qr failed")
 
     return data.get("payload") or {}
+
+async def done_order(
+    token: str,
+    tvt_id: int,
+    order_number: int,
+):
+    data = await paritet_client.post(
+        action="done_order",
+        headers={
+            "Access-Token": token,
+            "TVT-ID": str(tvt_id),
+        },
+        json={
+            "order": int(order_number),
+            "pin": None,
+            "code": None,
+        },
+    )
+
+    # ❗ ВАЖНО: НЕ бросаем Exception при code != 200
+    # потому что 500 = бизнес-ошибка (недостаточно средств)
+
+    return data
