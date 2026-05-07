@@ -658,6 +658,8 @@ function App() {
   const orderSwipeRef = useRef<{ orderNumber: number; startX: number; startY: number } | null>(null)
   const swipedOrderNumberRef = useRef<number | null>(null)
   const [orderLoading, setOrderLoading] = useState(false)
+  const [orderBalanceRefreshLoading, setOrderBalanceRefreshLoading] = useState(false)
+  const lastOrderBalanceRefreshTapAtRef = useRef(0)
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const [receiptLoading, setReceiptLoading] = useState(false)
   const [receiptData, setReceiptData] = useState<OrderReceiptResponse | null>(null)
@@ -1279,6 +1281,59 @@ function App() {
       setError(e.message || 'Ошибка обновления данных пайщика')
       return null
     }
+  }
+
+  async function refreshOrderUserBalance() {
+    if (!cashier || !selectedStore || !orderDetails || orderBalanceRefreshLoading) return
+
+    const targetUserAccount = orderDetails.order.user_account ?? foundUser?.user_account
+
+    if (!targetUserAccount) {
+      setError('Не удалось определить пайщика для обновления баланса')
+      return
+    }
+
+    setOrderBalanceRefreshLoading(true)
+    setError('')
+
+    try {
+      const data = await fetchCurrentShareholderData(targetUserAccount)
+      const freshBalance = Number(data.user.balance || 0)
+      const keepOrderNumber = Number(orderDetails.order.order_number || selectedOrderNumber || 0)
+
+      applySearchResponse(data, keepOrderNumber || undefined)
+
+      setOrderDetails((prev) =>
+        prev
+          ? {
+              ...prev,
+              order: {
+                ...prev.order,
+                user_balance: freshBalance,
+              },
+            }
+          : prev
+      )
+
+      setOwnerBalance(Number(data.store?.owner_balance || 0))
+      setCashBalance(Number(data.store?.cash_balance || 0))
+    } catch (e: any) {
+      setError(e.message || 'Ошибка обновления баланса пайщика')
+    } finally {
+      setOrderBalanceRefreshLoading(false)
+    }
+  }
+
+  function handleOrderBalancePointerUp() {
+    const now = Date.now()
+
+    if (now - lastOrderBalanceRefreshTapAtRef.current <= 450) {
+      lastOrderBalanceRefreshTapAtRef.current = 0
+      void refreshOrderUserBalance()
+      return
+    }
+
+    lastOrderBalanceRefreshTapAtRef.current = now
   }
 
 
@@ -3017,8 +3072,14 @@ async function openOrder(orderNumber: number) {
               </div>
 
               <div className="orderSummary orderSummaryCompact">
-                <div>
-                  <span>Баланс пайщика</span>
+                <div
+                  className={`orderBalanceCard${orderBalanceRefreshLoading ? ' isRefreshing' : ''}`}
+                  onPointerUp={handleOrderBalancePointerUp}
+                  role="button"
+                  tabIndex={0}
+                  title="Дважды нажмите, чтобы обновить баланс"
+                >
+                  <span>{orderBalanceRefreshLoading ? 'Обновление...' : 'Баланс пайщика'}</span>
                   <b>{formatMoney(order.user_balance)}</b>
                 </div>
                 <div>
