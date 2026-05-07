@@ -1315,15 +1315,15 @@ function App() {
           : prev
       )
 
-      setOwnerBalance(Number(data.store?.owner_balance || 0))
-      setCashBalance(Number(data.store?.cash_balance || 0))
+      // Здесь обновляем только баланс пайщика в заказе.
+      // Баланс владельца ТВТ и наличные не трогаем, чтобы не сбросить их в 0.
+
     } catch (e: any) {
       setError(e.message || 'Ошибка обновления баланса пайщика')
     } finally {
       setOrderBalanceRefreshLoading(false)
     }
   }
-
   function handleOrderBalancePointerUp() {
     const now = Date.now()
 
