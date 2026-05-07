@@ -7,6 +7,8 @@ from app.services.paritet.orders import (
     get_order_details as paritet_get_order,
     create_order as paritet_create_order,
     cancel_order as paritet_cancel_order,
+    replenish_balance_qr as paritet_replenish_balance_qr,
+    done_order as paritet_done_order,
 )
 
 import logging
@@ -225,7 +227,7 @@ async def done_order_route(
             "ok": data.get("code") == 200,
             "order_number": order_number,
             "error": data.get("error"),
-            "payload": data.get("payload"), 
+            "payload": data.get("payload") or {}, 
         }
 
     except Exception as e:

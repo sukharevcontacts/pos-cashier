@@ -94,6 +94,17 @@ type SearchResponse = {
   orders: FoundOrder[]
 }
 
+type OrderPaymentQrDialog = {
+  order_number: number
+  amount: number
+  old_balance: number
+  qr_base64: string
+  image_type: string
+  qr_url: string | null
+  ttl: number
+  created_at: number
+}
+
 type UserTransactionRow = {
   line_id: number
   transaction_id: string
@@ -352,6 +363,21 @@ function getOrderLineUiId(line: { order_line_id?: number | null; item: number })
 
 function isOrderLineUnsaved(line: OrderLine) {
   return Boolean(line.is_local || line.is_dirty || (typeof line.order_line_id === 'number' && line.order_line_id < 0))
+}
+
+function isInsufficientFundsError(message: string) {
+  const normalized = String(message || '').toLowerCase()
+  return normalized.includes('недостат') || normalized.includes('insufficient')
+}
+
+function buildQrImageSrc(qrBase64: string, imageType?: string | null) {
+  if (!qrBase64) return ''
+  if (qrBase64.startsWith('data:')) return qrBase64
+  return `data:${imageType || 'image/png'};base64,${qrBase64}`
+}
+
+function getOrderHasUnsavedChanges(orderDetails: OrderDetailsResponse | null) {
+  return Boolean(orderDetails?.lines?.some((line) => isOrderLineUnsaved(line)))
 }
 
 function getOrderLineRowStyle(line: OrderLine, dragLineId: number | null, animatingLineId: number | null, dragX: number, commitX: number) {
@@ -703,6 +729,9 @@ function App() {
 
   const [payLoading, setPayLoading] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
+  const [orderPaymentMessage, setOrderPaymentMessage] = useState('')
+  const [orderPaymentQrDialog, setOrderPaymentQrDialog] = useState<OrderPaymentQrDialog | null>(null)
+  const [orderPaymentQrLoading, setOrderPaymentQrLoading] = useState(false)
 
   const [sbpDialogOpen, setSbpDialogOpen] = useState(false)
   const [sbpAmount, setSbpAmount] = useState('')
@@ -1194,36 +1223,61 @@ function App() {
     }
   }
 
-  async function refreshCurrentUser(keepSelectedOrderNumber?: number | null) {
-    if (!cashier || !selectedStore || !foundUser) return
+  async function fetchCurrentShareholderData(account: number | string) {
+    if (!cashier || !selectedStore) {
+      throw new Error('Не выбрана точка выдачи или кассир')
+    }
 
-    try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-        q: String(foundUser.user_account),
-      })
+    const params = new URLSearchParams({
+      cashier_account: String(cashier.cashier_account ?? ''),
+      store_id: String(selectedStore.store_id),
+      account: String(account),
+    })
 
-      const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
+    const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось обновить данные пайщика')
-      }
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось обновить данные пайщика'))
+    }
 
-      const data: SearchResponse = await res.json()
+    const data: SearchResponse = await res.json()
+    return data
+  }
 
-      setFoundUser(data.user)
-      await fetchStatus()
-      setOrders(data.orders)
-      setStoreState(data.store)
+  function applySearchResponse(data: SearchResponse, keepSelectedOrderNumber?: number | null) {
+    setFoundUser(data.user)
+    setOrders(data.orders)
+    setStoreState(data.store)
 
+    if (keepSelectedOrderNumber !== undefined) {
       if (keepSelectedOrderNumber) {
         const exists = data.orders.some((o) => o.order_number === keepSelectedOrderNumber)
         setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
+      } else {
+        setSelectedOrderNumber(null)
       }
+    }
+  }
+
+  async function refreshCurrentUser(
+    keepSelectedOrderNumber?: number | null,
+    options: { updateCashierStatus?: boolean } = {}
+  ) {
+    if (!cashier || !selectedStore || !foundUser) return
+
+    try {
+      const data = await fetchCurrentShareholderData(foundUser.user_account)
+      applySearchResponse(data, keepSelectedOrderNumber)
+
+      if (options.updateCashierStatus !== false) {
+        await fetchStatus()
+      }
+
+      return data
     } catch (e: any) {
       setError(e.message || 'Ошибка обновления данных пайщика')
+      return null
     }
   }
 
@@ -1919,6 +1973,9 @@ async function openOrder(orderNumber: number) {
       ).catch(() => null)
     }
 
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentMessage('')
+
     const keepOrderNumber = orderDetails?.order.order_number ?? null
     setOrderDetails(null)
     await refreshCurrentUser(keepOrderNumber)
@@ -1970,6 +2027,8 @@ async function openOrder(orderNumber: number) {
     setSbpDialogOpen(false)
     setSbpAmount('')
     setSbpMessage('')
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentMessage('')
 
     setNewUserDialogOpen(false)
     setNewUserForm({
@@ -2615,71 +2674,197 @@ async function openOrder(orderNumber: number) {
     }
   }
 
-  async function payOrder() {
-    if (!cashier || !selectedStore || !orderDetails) return
+  async function generateOrderPaymentQr(orderNumber: number, amount: number, oldBalance: number) {
+    if (!selectedStore || !foundUser) return
 
-    if (!confirm('Оплатить заказ и перевести его в статус Выполнен?')) return
+    const userId = Number(foundUser.user_id || 0)
+    if (!userId) {
+      throw new Error('Не удалось сформировать QR: в данных пайщика нет user_id')
+    }
 
-    setPayLoading(true)
-    setError('')
+    const normalizedAmount = Number(amount.toFixed(2))
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      throw new Error('Не удалось сформировать QR: некорректная сумма пополнения')
+    }
+
+    setOrderPaymentQrLoading(true)
+    setOrderPaymentMessage('')
 
     try {
-      const res = await apiFetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/pay`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            device_id: 'web',
-          }),
-        }
-      )
+      const params = new URLSearchParams({
+        store_id: String(selectedStore.store_id),
+        user_id: String(userId),
+        amount: String(normalizedAmount),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}/pay?${params.toString()}`, {
+        method: 'POST',
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось оплатить заказ')
+        throw new Error(getErrorMessage(data, 'Не удалось сформировать QR пополнения'))
       }
 
-      const paid = await res.json()
+      const data = await res.json()
+      const qrBase64 = String(data.qr_base64 || '')
 
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.order_number === paid.order_number
-            ? {
-                ...o,
-                status: 'done',
-                status_label: 'Выполнен',
-                order_sum: paid.amount,
-                date_updated: new Date().toISOString(),
-              }
-            : o
-        )
-      )
+      if (!qrBase64) {
+        throw new Error('Сервер не вернул QR-картинку')
+      }
 
-      await refreshCurrentUser(paid.order_number)
-      await openOrder(orderDetails.order.order_number)
+      setOrderPaymentQrDialog({
+        order_number: orderNumber,
+        amount: Number(data.amount || normalizedAmount),
+        old_balance: oldBalance,
+        qr_base64: qrBase64,
+        image_type: String(data.image_type || 'image/png'),
+        qr_url: data.qr_url || null,
+        ttl: Number(data.ttl || 15),
+        created_at: Date.now(),
+      })
+    } finally {
+      setOrderPaymentQrLoading(false)
+    }
+  }
+
+  async function doneOrder(orderNumber: number) {
+    if (!selectedStore) return
+
+    const params = new URLSearchParams({
+      store_id: String(selectedStore.store_id),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}/done?${params.toString()}`, {
+      method: 'POST',
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось провести заказ'))
+    }
+
+    const data = await res.json()
+
+    if (!data?.ok) {
+      throw new Error(data?.error || 'Не удалось провести заказ')
+    }
+
+    return data
+  }
+
+  async function payOrder() {
+    if (!cashier || !selectedStore || !orderDetails || !foundUser) return
+
+    const orderNumber = Number(orderDetails.order.order_number || 0)
+
+    if (!orderNumber) {
+      setError('Сначала сохраните новый заказ')
+      return
+    }
+
+    if (getOrderHasUnsavedChanges(orderDetails)) {
+      setError('Сначала сохраните изменения заказа')
+      return
+    }
+
+    const orderSum = Number(orderDetails.order.order_sum || 0)
+
+    if (!Number.isFinite(orderSum) || orderSum <= 0) {
+      setError('Некорректная сумма заказа')
+      return
+    }
+
+    setPayLoading(true)
+    setError('')
+    setOrderPaymentMessage('')
+
+    try {
+      const searchData = await fetchCurrentShareholderData(foundUser.user_account)
+      applySearchResponse(searchData, orderNumber)
+
+      const freshBalance = Number(searchData.user.balance || 0)
+
+      if (freshBalance >= orderSum) {
+        try {
+          await doneOrder(orderNumber)
+        } catch (doneError: any) {
+          const message = doneError?.message || 'Не удалось провести заказ'
+
+          if (isInsufficientFundsError(message)) {
+            await generateOrderPaymentQr(orderNumber, orderSum, freshBalance)
+            setOrderPaymentMessage(message)
+            return
+          }
+
+          throw doneError
+        }
+
+        await refreshCurrentUser(null, { updateCashierStatus: false })
+        await fetchStatus()
+        setOrderDetails(null)
+        setSelectedOrderNumber(null)
+        setOrderPaymentMessage('Заказ оплачен')
+        return
+      }
+
+      await generateOrderPaymentQr(orderNumber, orderSum, freshBalance)
     } catch (e: any) {
       const message = e.message || 'Ошибка оплаты заказа'
 
-      if (message.includes('Недостаточно паев') && orderDetails) {
-        const deficit = Math.max(
-          0,
-          Number(orderDetails.order.order_sum || 0) - Number(orderDetails.order.user_balance || 0)
-        )
-
-        setSbpAmount(deficit.toFixed(2))
-        setSbpMessage(message)
-        setSbpDialogOpen(true)
+      if (isInsufficientFundsError(message)) {
+        setOrderPaymentMessage(message)
+      } else {
+        setError(message)
       }
-
-      setError(message)
     } finally {
       setPayLoading(false)
     }
   }
 
+
+  function closeOrderPaymentQrDialog() {
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentQrLoading(false)
+  }
+
+  useEffect(() => {
+    if (!orderPaymentQrDialog || !foundUser) return
+
+    const ttlMs = Math.max(1, Number(orderPaymentQrDialog.ttl || 15)) * 60 * 1000
+    let stopped = false
+
+    const pollBalance = async () => {
+      if (stopped || !orderPaymentQrDialog || !foundUser) return
+
+      const elapsed = Date.now() - orderPaymentQrDialog.created_at
+      if (elapsed >= ttlMs) {
+        setOrderPaymentQrDialog(null)
+        setOrderPaymentMessage('Время действия QR истекло. При необходимости сформируйте новый QR.')
+        return
+      }
+
+      try {
+        const data = await fetchCurrentShareholderData(foundUser.user_account)
+        applySearchResponse(data, orderPaymentQrDialog.order_number)
+
+        const newBalance = Number(data.user.balance || 0)
+        if (newBalance > Number(orderPaymentQrDialog.old_balance || 0)) {
+          setOrderPaymentQrDialog(null)
+          setOrderPaymentMessage('Баланс покупателя обновлён. Можно повторно нажать «Оплатить».')
+        }
+      } catch (e) {
+        console.error('Ошибка проверки баланса покупателя по QR', e)
+      }
+    }
+
+    const timer = window.setInterval(pollBalance, 30000)
+
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [orderPaymentQrDialog, foundUser?.user_account, cashier, selectedStore])
 
   function appendSbpAmountValue(value: string) {
     setSbpAmount((current) => {
@@ -2856,6 +3041,7 @@ async function openOrder(orderNumber: number) {
             </div>
 
             {error && <div className="error">{error}</div>}
+            {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
 
             {activeOrderLines.length === 0 ? (
               <div className="emptyOrder">
@@ -3014,9 +3200,9 @@ async function openOrder(orderNumber: number) {
               <button
                 className="primary"
                 onClick={payOrder}
-                disabled={orderDetails.readonly || orderDetails.order.order_number <= 0 || activeOrderLines.length === 0 || payLoading}
+                disabled={orderDetails.readonly || orderDetails.order.order_number <= 0 || activeOrderLines.length === 0 || payLoading || orderPaymentQrLoading}
               >
-                {payLoading ? 'Оплачиваем...' : 'Оплатить'}
+                {payLoading || orderPaymentQrLoading ? 'Оплачиваем...' : 'Оплатить'}
               </button>
               <button
                 className="secondary"
@@ -3027,57 +3213,51 @@ async function openOrder(orderNumber: number) {
               </button>
             </div>
 
-            {sbpDialogOpen && (
+            {orderPaymentQrDialog && (
               <div className="qtyOverlay">
                 <div className="qtyDialog">
                   <div className="qtyDialogHeader">
                     <div>
-                      <h2>Пополнение П/С через СБП</h2>
-                      <p className="muted">Заглушка: сумма будет зачислена на П/С пайщика с технического счета 9999999</p>
+                      <h2>Пополнение баланса покупателя</h2>
+                      <p className="muted">Заказ № {orderPaymentQrDialog.order_number}</p>
                     </div>
-                    <button className="secondary" onClick={() => setSbpDialogOpen(false)}>
+                    <button className="secondary" onClick={closeOrderPaymentQrDialog}>
                       Закрыть
                     </button>
                   </div>
 
                   <div className="qtyDialogBody">
-                    {sbpMessage && <div className="notice">{sbpMessage}</div>}
+                    {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
 
-                    <label>Сумма пополнения</label>
-                    <input
-                      ref={sbpAmountInputRef}
-                      value={sbpAmount}
-                      onChange={(e) => setSbpAmount(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          setMainKeypadTarget(null)
-                          void sbpTopupStub()
-                        }
-                      }}
-                      onFocus={() => {
-                        if (shouldUseTouchKeypad()) setMainKeypadTarget('sbpTopup')
-                      }}
-                      onClick={() => {
-                        if (shouldUseTouchKeypad()) setMainKeypadTarget('sbpTopup')
-                      }}
-                      readOnly={shouldUseTouchKeypad()}
-                      inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
-                      enterKeyHint="done"
-                      placeholder="0.00"
-                    />
+                    <div className="cashTopupConfirmAmount">
+                      <span>Сумма к оплате с учетом задолженности</span>
+					  <b>{formatMoney(Number(orderPaymentQrDialog.amount || 0) / 100)}</b>
+                    </div>
 
-                    {error && <div className="error">{error}</div>}
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
+                      <img
+                        src={buildQrImageSrc(orderPaymentQrDialog.qr_base64, orderPaymentQrDialog.image_type)}
+                        alt="QR для пополнения баланса"
+                        style={{ width: 300, height: 300, maxWidth: '100%', objectFit: 'contain' }}
+                      />
+                    </div>
+
+                    <p className="muted" style={{ textAlign: 'center', margin: 0 }}>
+                      Проверяем баланс покупателя каждые 30 секунд. QR действует {orderPaymentQrDialog.ttl} мин.
+                    </p>
+
+                    {orderPaymentQrDialog.qr_url && (
+                      <p className="muted" style={{ textAlign: 'center', wordBreak: 'break-all' }}>
+                        {orderPaymentQrDialog.qr_url}
+                      </p>
+                    )}
 
                     <div className="qtyActions">
-                      <button className="secondary" onClick={() => setSbpDialogOpen(false)} disabled={sbpLoading}>
-                        Отмена
+                      <button className="secondary" onClick={closeOrderPaymentQrDialog}>
+                        Закрыть
                       </button>
-                      <button className="primary" onClick={sbpTopupStub} disabled={sbpLoading || Number(sbpAmount) <= 0}>
-                        {sbpLoading ? 'Пополняем...' : 'Пополнить'}
-                      </button>
-                      <button className="primary" onClick={payOrder} disabled={sbpLoading || payLoading}>
-                        Снова оплатить
+                      <button className="primary" onClick={payOrder} disabled={payLoading || orderPaymentQrLoading}>
+                        {payLoading || orderPaymentQrLoading ? 'Проверяем...' : 'Повторить оплату'}
                       </button>
                     </div>
                   </div>
@@ -4120,6 +4300,7 @@ async function openOrder(orderNumber: number) {
             </div>
 
             {error && <div className="error">{error}</div>}
+            {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
             {orderLoading && <div className="notice">Открываем заказ...</div>}
 
             <div className="infoGrid">
