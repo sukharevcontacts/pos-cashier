@@ -4,6 +4,7 @@ import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
 type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | null
+type SideMenuTab = 'root' | 'settings' | 'reports'
 
 type CashierSettings = {
   cashier_account: number | string
@@ -600,6 +601,7 @@ function App() {
   const [stores, setStores] = useState<Store[]>([])
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
+  const [sideMenuTab, setSideMenuTab] = useState<SideMenuTab>('root')
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [mainKeypadTarget, setMainKeypadTarget] = useState<MainKeypadTarget>(null)
@@ -1092,6 +1094,30 @@ function App() {
     )
   }
 
+  function closeSideMenu() {
+    setSideMenuOpen(false)
+    setSideMenuTab('root')
+  }
+
+  function openShareholderScreenFromSideMenu() {
+    closeSideMenu()
+    setMainKeypadTarget(null)
+
+    // Возвращаемся к экрану выбранного пайщика.
+    // Самого пайщика, строку поиска и список заказов не очищаем.
+    const unlockPromise = unlockCurrentOrderIfNeeded()
+
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentMessage('')
+    setReceiptDialogOpen(false)
+    setReceiptData(null)
+    setOrderDetails(null)
+    setSelectedOrderNumber(null)
+    setError('')
+
+    void unlockPromise
+  }
+
   function renderSideMenu() {
     if (!cashier) return null
 
@@ -1101,7 +1127,7 @@ function App() {
           <button
             className="sideMenuBackdrop"
             aria-label="Закрыть меню"
-            onClick={() => setSideMenuOpen(false)}
+            onClick={closeSideMenu}
           />
         )}
 
@@ -1111,37 +1137,98 @@ function App() {
               <b>Меню кассы</b>
               <span>Кассир {cashier.cashier_account}</span>
             </div>
-            <button className="secondary menuCloseButton" onClick={() => setSideMenuOpen(false)}>
+            <button className="secondary menuCloseButton" onClick={closeSideMenu}>
               ×
             </button>
           </div>
 
-          <div className="sideMenuSection">
-            <span className="sideMenuCaption">Настройки</span>
-            <b>Внешний вид</b>
-            <label htmlFor="screen-profile-select">Адаптация под экран</label>
-            <select
-              id="screen-profile-select"
-              value={screenProfile}
-              onChange={(e) => saveScreenProfile(e.target.value as ScreenProfile)}
-              disabled={settingsSaving}
-            >
-              <option value="auto">Авто</option>
-              <option value="tablet_10">Планшет 10 дюймов</option>
-            </select>
-            <p className="sideMenuHint">
-              Настройка сохраняется для текущего кассира и применяется сразу.
-            </p>
-          </div>
+          {sideMenuTab === 'root' && (
+            <div className="sideMenuRoot">
+              <div className="sideMenuRootMain">
+                <button type="button" className="sideMenuTabButton" onClick={openShareholderScreenFromSideMenu}>
+                  1. Пайщик
+                </button>
 
-          <div className="sideMenuSection">
-            <button className="secondary full" onClick={switchStore} disabled={!selectedStore}>
-              Сменить ТВТ
-            </button>
-            <button className="secondary full" onClick={logoutCashier}>
-              Выйти
-            </button>
-          </div>
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('settings')}
+                >
+                  2. Настройки
+                </button>
+
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('reports')}
+                >
+                  3. Отчеты
+                </button>
+              </div>
+
+              <div className="sideMenuRootActions">
+                <button className="secondary full" onClick={switchStore} disabled={!selectedStore}>
+                  Сменить ТВТ
+                </button>
+                <button className="secondary full" onClick={logoutCashier}>
+                  Выйти
+                </button>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'settings' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>2. Настройки</span>
+                  <b>Настройки кассы</b>
+                </div>
+              </div>
+
+              <div className="sideMenuSettingsList">
+                <div className="sideMenuSection">
+                  <span className="sideMenuCaption">Внешний вид</span>
+                  <b>Адаптация под экран</b>
+                  <label htmlFor="screen-profile-select">Режим интерфейса</label>
+                  <select
+                    id="screen-profile-select"
+                    value={screenProfile}
+                    onChange={(e) => saveScreenProfile(e.target.value as ScreenProfile)}
+                    disabled={settingsSaving}
+                  >
+                    <option value="auto">Авто</option>
+                    <option value="tablet_10">Планшет 10 дюймов</option>
+                  </select>
+                  <p className="sideMenuHint">
+                    Настройка сохраняется для текущего кассира и применяется сразу.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'reports' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>3. Отчеты</span>
+                  <b>Отчеты</b>
+                </div>
+              </div>
+
+              <div className="sideMenuEmptyState">
+                <b>Отчеты в разработке</b>
+                <p>Скоро здесь появятся отчеты по кассе, заказам и операциям.</p>
+              </div>
+            </div>
+          )}
         </aside>
       </>
     )

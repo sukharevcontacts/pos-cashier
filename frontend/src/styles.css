@@ -1050,6 +1050,35 @@ button:disabled {
   line-height: 1;
 }
 
+.sideMenuTabs {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0 6px;
+}
+
+.sideMenuTabButton {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #d8d8d8;
+  background: #f6f6f6;
+  color: #222;
+  text-align: left;
+}
+
+.sideMenuTabButton.active {
+  border-color: #2d7d32;
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.sideMenuTabButton:hover {
+  background: #eeeeee;
+}
+
+.sideMenuTabButton.active:hover {
+  background: #e8f5e9;
+}
+
 .sideMenuSection {
   display: grid;
   gap: 10px;
@@ -1081,6 +1110,25 @@ button:disabled {
   margin: 0;
   color: #666;
   font-size: 14px;
+  line-height: 1.35;
+}
+
+.sideMenuEmptyState {
+  padding: 16px;
+  border: 1px dashed #cfcfcf;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.sideMenuEmptyState b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.sideMenuEmptyState p {
+  margin: 0;
+  color: #666;
   line-height: 1.35;
 }
 
@@ -2884,4 +2932,103 @@ body[data-screen-profile="tablet_10"] .topbarLogoutSpacer {
   min-height: 34px;
   padding: 0 8px;
   font-size: 12px;
+}
+
+
+/* Вложенные окна левого меню */
+.sideMenuRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: calc(100dvh - 110px);
+  padding: 18px 0;
+}
+
+.sideMenuSubWindow {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  background: #fafafa;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.06);
+}
+
+.sideMenuSubHeader {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.sideMenuBackButton {
+  width: fit-content;
+  padding: 10px 14px;
+}
+
+.sideMenuSubTitle span,
+.sideMenuSubTitle b {
+  display: block;
+}
+
+.sideMenuSubTitle span {
+  color: #666;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sideMenuSubTitle b {
+  margin-top: 4px;
+  font-size: 22px;
+}
+
+.sideMenuSettingsList {
+  display: grid;
+  gap: 12px;
+}
+
+.sideMenuSubWindow .sideMenuSection {
+  padding: 14px;
+  border: 1px solid #eeeeee;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.sideMenuSubWindow .sideMenuSection:last-child {
+  border-bottom: 1px solid #eeeeee;
+}
+
+.sideMenuEmptyState {
+  padding: 18px;
+  border: 1px dashed #cfcfcf;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.sideMenuEmptyState b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.sideMenuEmptyState p {
+  margin: 0;
+  color: #666;
+  line-height: 1.35;
+}
+
+
+.sideMenuRootMain {
+  display: grid;
+  gap: 12px;
+}
+
+
+.sideMenuRootActions {
+  display: grid;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid #e8e8e8;
 }
