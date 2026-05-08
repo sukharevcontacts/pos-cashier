@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional
+import logging
 
 from app.core.session import session_store
 from app.services.paritet.catalog import get_catalog
@@ -8,6 +9,8 @@ from app.services.paritet.stock import (
     post_goods as paritet_post_goods,
     writeoff_goods as paritet_writeoff_goods,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cashier/items", tags=["items"])
 
@@ -70,6 +73,7 @@ async def search_products(
             }
 
         # 🔹 просто каталог (верхний уровень)
+        warehouse_id = session.warehouse_id
         payload = await get_catalog(
             token=session.token,
             tvt_id=store_id,
@@ -77,7 +81,7 @@ async def search_products(
                 "category": -1,
                 "preview_width": 240,
                 "preview_height": 320,
-                "warehouse": store_id
+                "warehouse": warehouse_id
             }
         )
 
@@ -86,14 +90,19 @@ async def search_products(
             "categories": payload.get("categories", [])
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception("Ошибка поиска товаров")
         raise HTTPException(400, str(e))
+
 
 @router.post("/goods/post")
 async def post_goods_route(
     product_id: int = Query(...),
     count: float = Query(...),
     store_id: int = Query(...),
+    comment: Optional[str] = Query(None),
     x_session_id: str = Header(...),
 ):
     session = session_store.get(x_session_id)
@@ -104,7 +113,7 @@ async def post_goods_route(
         await paritet_post_goods(
             token=session.token,
             tvt_id=store_id,
-            warehouse_id=session.warehouse_id,  # ✅ ключевое изменение
+            warehouse_id=session.warehouse_id,
             product_id=product_id,
             count=count,
         )
@@ -118,11 +127,13 @@ async def post_goods_route(
         logger.exception("Ошибка оприходования товара")
         raise HTTPException(400, str(e))
 
+
 @router.post("/goods/writeoff")
 async def writeoff_goods_route(
     product_id: int = Query(...),
     count: float = Query(...),
     store_id: int = Query(...),
+    comment: Optional[str] = Query(None),
     x_session_id: str = Header(...),
 ):
     session = session_store.get(x_session_id)
@@ -133,7 +144,7 @@ async def writeoff_goods_route(
         await paritet_writeoff_goods(
             token=session.token,
             tvt_id=store_id,
-            warehouse_id=session.warehouse_id,  # ✅ ключевое изменение
+            warehouse_id=session.warehouse_id,
             product_id=product_id,
             count=count,
         )
@@ -146,4 +157,3 @@ async def writeoff_goods_route(
     except Exception as e:
         logger.exception("Ошибка списания товара")
         raise HTTPException(400, str(e))
-

@@ -3054,3 +3054,60 @@ body[data-screen-profile="tablet_10"] .topbarLogoutSpacer {
   padding-top: 18px;
   border-top: 1px solid #e8e8e8;
 }
+
+/* Общий селектор товара: используется в заказе и приходе */
+.productSelectorBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.productSelectorSearchRow {
+  grid-template-columns: 1fr 120px 160px;
+}
+
+.selectedProductCard {
+  display: grid;
+  grid-template-columns: 86px 1fr 110px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #8fd1aa;
+  border-radius: 12px;
+  background: #eef7f0;
+}
+
+.selectedProductCard b,
+.selectedProductCard span {
+  display: block;
+}
+
+.selectedProductCard b {
+  font-size: 18px;
+  margin-bottom: 5px;
+  color: #064f24;
+}
+
+.selectedProductCard span {
+  color: #2f6f48;
+  font-size: 14px;
+  margin-top: 3px;
+}
+
+body[data-screen-profile="tablet_10"] .productSelectorSearchRow {
+  grid-template-columns: 1fr 96px 130px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .selectedProductCard {
+  grid-template-columns: 70px 1fr 92px;
+  gap: 10px;
+  padding: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .selectedProductCard b {
+  font-size: 15px;
+}
+
+body[data-screen-profile="tablet_10"] .selectedProductCard span {
+  font-size: 12px;
+}

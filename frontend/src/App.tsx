@@ -679,6 +679,7 @@ function App() {
     qty_delta: '',
     comment: '',
   })
+  const [stockSelectedItem, setStockSelectedItem] = useState<StoreItem | null>(null)
   const [stockSearchQuery, setStockSearchQuery] = useState('')
   const [stockSearchLoading, setStockSearchLoading] = useState(false)
   const [stockSearchItems, setStockSearchItems] = useState<StoreItem[]>([])
@@ -742,6 +743,7 @@ function App() {
   }, [cashier, orderDetails])
 
   const [itemPickerOpen, setItemPickerOpen] = useState(false)
+  const [itemPickerMode, setItemPickerMode] = useState<'order' | 'stockReceipt'>('order')
   const [itemSearchQuery, setItemSearchQuery] = useState('')
   const [itemsLoading, setItemsLoading] = useState(false)
   const [quickItemCode, setQuickItemCode] = useState('')
@@ -1616,41 +1618,69 @@ function App() {
     }))
   }
 
-  async function loadStockSearchItems(query = stockSearchQuery) {
-    if (!cashier || !selectedStore) return
+  async function searchProductsForSelector(query: string, options: { limit?: number } = {}) {
+    if (!cashier || !selectedStore) return []
 
-    setStockSearchLoading(true)
+    const normalizedQuery = query.trim()
+    const params = buildItemSearchParams(normalizedQuery)
+    const queryString = params.toString()
+    const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
+
+    console.debug('[cashier-product-selector-search]', {
+      query: normalizedQuery,
+      searchParam: getItemSearchParam(normalizedQuery),
+      url: searchUrl,
+      store_id: selectedStore.store_id,
+    })
+
+    const res = await apiFetch(searchUrl, {
+      headers: {
+        store_id: String(selectedStore.store_id),
+        'store-id': String(selectedStore.store_id),
+      },
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.detail || 'Не удалось найти товары')
+    }
+
+    const data = await res.json()
+    const goods = extractParitetGoods(data)
+    const mappedItems = goods.map(mapParitetProductToStoreItem)
+
+    return options.limit ? mappedItems.slice(0, options.limit) : mappedItems
+  }
+
+  async function loadProductSelectorResults(query: string, target: 'picker' | 'stockReceipt' | 'stockView' = 'picker') {
+    const setLoading = target === 'picker' ? setItemsLoading : target === 'stockView' ? setStockViewLoading : setStockSearchLoading
+    const setItems = target === 'picker' ? setStoreItems : target === 'stockView' ? setStockViewItems : setStockSearchItems
+
+    setLoading(true)
     setError('')
 
     try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-        limit: '30',
-      })
-
-      if (query.trim()) {
-        params.set('q', query.trim())
-      }
-
-      const res = await apiFetch(`${API_BASE}/cashier/items?${params.toString()}`)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось найти товары')
-      }
-
-      const data = await res.json()
-      setStockSearchItems(data.items || [])
+      const limit = target === 'picker' ? 100 : target === 'stockView' ? 150 : 30
+      const items = await searchProductsForSelector(query, { limit })
+      setItems(items)
     } catch (e: any) {
-      setStockSearchItems([])
+      setItems([])
       setError(e.message || 'Ошибка поиска товара')
     } finally {
-      setStockSearchLoading(false)
+      setLoading(false)
     }
   }
 
+  async function loadStockSearchItems(query = stockSearchQuery) {
+    await loadProductSelectorResults(query, 'stockReceipt')
+  }
+
+  function getProductKindLabel(item: StoreItem) {
+    return item.isfractional ? `Весовой · ${item.pack || item.unit || 'кг'}` : 'Штучный товар'
+  }
+
   function selectStockItem(item: StoreItem) {
+    setStockSelectedItem(item)
     updateStockField('item', String(item.item))
     setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
   }
@@ -1702,11 +1732,11 @@ function App() {
   async function stockReceipt() {
     if (!cashier || !selectedStore) return
 
-    const itemCode = Number(stockForm.item)
+    const itemCode = Number(stockForm.item || stockSelectedItem?.item || 0)
     const qtyDelta = Number(stockForm.qty_delta)
 
     if (!itemCode || itemCode <= 0) {
-      setError('Введите корректный код товара')
+      setError('Сначала выберите товар')
       return
     }
 
@@ -1720,17 +1750,18 @@ function App() {
     setStockMessage('')
 
     try {
-      const res = await apiFetch(`${API_BASE}/cashier/stock/receipt`, {
+      const params = new URLSearchParams({
+        product_id: String(itemCode),
+        count: String(qtyDelta),
+        store_id: String(selectedStore.store_id),
+      })
+
+      if (stockForm.comment.trim()) {
+        params.set('comment', stockForm.comment.trim())
+      }
+
+      const res = await apiFetch(`${API_BASE}/cashier/items/goods/post?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          item: itemCode,
-          qty_delta: qtyDelta,
-          comment: stockForm.comment,
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
@@ -1738,10 +1769,8 @@ function App() {
         throw new Error(data?.detail || 'Не удалось оприходовать товар')
       }
 
-      const data = await res.json()
-
       setStockMessage(
-        `Оприходовано: ${data.item_name}. Остаток: ${formatQty(data.item_stock_before, data.item_type)} → ${formatQty(data.item_stock_after, data.item_type)}`
+        `Оприходовано: ${stockSelectedItem?.item_name || `товар ${itemCode}`} · количество ${formatQty(qtyDelta, stockSelectedItem?.isfractional)}`
       )
 
       setStockForm((prev) => ({
@@ -1749,6 +1778,10 @@ function App() {
         qty_delta: '',
         comment: '',
       }))
+
+      if (stockSearchQuery.trim()) {
+        await loadStockSearchItems(stockSearchQuery)
+      }
     } catch (e: any) {
       setError(e.message || 'Ошибка прихода товара')
     } finally {
@@ -2280,6 +2313,7 @@ async function openOrder(orderNumber: number) {
       qty_delta: '',
       comment: '',
     })
+    setStockSelectedItem(null)
     setStockSearchQuery('')
     setStockSearchItems([])
 
@@ -2377,51 +2411,12 @@ async function openOrder(orderNumber: number) {
     _category = selectedItemCategory,
     _subcategory = selectedItemSubcategory
   ) {
-    if (!cashier || !selectedStore) return
-
-    const normalizedQuery = query.trim()
-
-    setItemsLoading(true)
-    setError('')
-
-    try {
-      const params = buildItemSearchParams(normalizedQuery)
-      const queryString = params.toString()
-      const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
-
-      console.debug('[cashier-items-search]', {
-        query: normalizedQuery,
-        searchParam: getItemSearchParam(normalizedQuery),
-        url: searchUrl,
-        store_id: selectedStore.store_id,
-      })
-
-      const res = await apiFetch(searchUrl, {
-        headers: {
-          store_id: String(selectedStore.store_id),
-          'store-id': String(selectedStore.store_id),
-        },
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось загрузить товары')
-      }
-
-      const data = await res.json()
-      const goods = extractParitetGoods(data)
-
-      setStoreItems(goods.map(mapParitetProductToStoreItem))
-      setItemCategories([])
-    } catch (e: any) {
-      setStoreItems([])
-      setError(e.message || 'Ошибка загрузки товаров')
-    } finally {
-      setItemsLoading(false)
-    }
+    await loadProductSelectorResults(query, 'picker')
+    setItemCategories([])
   }
 
-  async function openItemPicker() {
+  async function openItemPicker(mode: 'order' | 'stockReceipt' = 'order') {
+    setItemPickerMode(mode)
     setItemPickerOpen(true)
     setItemSearchQuery('')
     setSelectedItemCategory('')
@@ -2442,6 +2437,17 @@ async function openOrder(orderNumber: number) {
       window.clearTimeout(timer)
     }
   }, [itemPickerOpen, itemSearchQuery, selectedItemCategory, selectedItemSubcategory])
+
+
+  async function handleProductSelectedFromPicker(item: StoreItem) {
+    if (itemPickerMode === 'stockReceipt') {
+      selectStockItem(item)
+      setItemPickerOpen(false)
+      return
+    }
+
+    await addItemToCurrentOrder(item)
+  }
 
   function updateOrderLinesLocally(updater: (lines: OrderLine[]) => OrderLine[]) {
     setOrderDetails((prev) => {
@@ -2546,6 +2552,33 @@ async function openOrder(orderNumber: number) {
     }
   }, [quickItemCode, selectedStore?.store_id, orderDetails?.order.order_number, orderDetails?.readonly])
 
+
+  useEffect(() => {
+    if (!stockDialogOpen) {
+      return
+    }
+
+    const normalizedQuery = stockSearchQuery.trim()
+
+    if (!normalizedQuery) {
+      setStockSearchItems([])
+      return
+    }
+
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setStockSearchItems([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadStockSearchItems(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [stockDialogOpen, stockSearchQuery, selectedStore?.store_id])
+
   async function addQuickItemToCurrentOrder(item: StoreItem) {
     await addItemToCurrentOrder(item, { keepSearchOpen: false })
     setQuickItemCode('')
@@ -2597,7 +2630,7 @@ async function openOrder(orderNumber: number) {
       return
     }
 
-    await openItemPicker()
+    await openItemPicker('order')
   }
 
   function openQtyDialog(line: OrderLine) {
@@ -3777,7 +3810,7 @@ async function openOrder(orderNumber: number) {
                 <div className="itemPicker">
                   <div className="itemPickerHeader">
                     <div>
-                      <h2>Добавить товар</h2>
+                      <h2>{itemPickerMode === 'stockReceipt' ? 'Выбрать товар для прихода' : 'Добавить товар'}</h2>
                       <p className="muted">Автопоиск по штрихкоду или названию</p>
                     </div>
                     <button className="secondary" onClick={() => setItemPickerOpen(false)}>
@@ -3853,8 +3886,8 @@ async function openOrder(orderNumber: number) {
                       <button
                         key={item.item}
                         className="itemCard"
-                        onClick={() => addItemToCurrentOrder(item)}
-                        disabled={itemsLoading || item.available_qty <= 0}
+                        onClick={() => handleProductSelectedFromPicker(item)}
+                        disabled={itemsLoading || (itemPickerMode === 'order' && item.available_qty <= 0)}
                       >
                         <div className="itemPhoto">
                           {item.photo_url ? (
@@ -4083,31 +4116,9 @@ async function openOrder(orderNumber: number) {
               </div>
 
               <div className="stockForm">
-                <div className="stockInlineRow stockFull">
-                  <div className="stockField">
-                    <label>Код товара</label>
-                    <input
-                      value={stockForm.item}
-                      onChange={(e) => updateStockField('item', e.target.value)}
-                      placeholder="Например 2811"
-                      inputMode="numeric"
-                    />
-                  </div>
-
-                  <div className="stockField">
-                    <label>Количество прихода</label>
-                    <input
-                      value={stockForm.qty_delta}
-                      onChange={(e) => updateStockField('qty_delta', e.target.value)}
-                      placeholder="Например 1 или 1.250"
-                      inputMode="decimal"
-                    />
-                  </div>
-                </div>
-
-                <div className="stockSearchBlock stockFull">
-                  <label>Поиск товара</label>
-                  <div className="stockSearchRow">
+                <div className="stockSearchBlock stockFull productSelectorBlock">
+                  <label>Товар</label>
+                  <div className="stockSearchRow productSelectorSearchRow">
                     <input
                       value={stockSearchQuery}
                       onChange={(e) => setStockSearchQuery(e.target.value)}
@@ -4116,7 +4127,7 @@ async function openOrder(orderNumber: number) {
                           loadStockSearchItems(stockSearchQuery)
                         }
                       }}
-                      placeholder="Введите код, название, категорию или подкатегорию"
+                      placeholder="ID, штрихкод или название товара"
                     />
                     <button
                       className="primary"
@@ -4127,37 +4138,69 @@ async function openOrder(orderNumber: number) {
                     </button>
                     <button
                       className="secondary"
-                      onClick={() => {
-                        setStockSearchQuery('')
-                        loadStockSearchItems('')
-                      }}
+                      onClick={() => openItemPicker('stockReceipt')}
                     >
-                      Очистить
+                      Выбрать товар
                     </button>
                   </div>
 
-                  <div className="stockSearchResults">
-                    {stockSearchItems.map((item) => (
+                  {stockSelectedItem && (
+                    <div className="selectedProductCard">
+                      <div className="itemPhoto">
+                        {stockSelectedItem.photo_url ? (
+                          <img src={stockSelectedItem.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+                      <div>
+                        <b>{stockSelectedItem.item_name}</b>
+                        <span>Код {stockSelectedItem.item} · {getProductKindLabel(stockSelectedItem)}</span>
+                        <span>Остаток: {formatQty(stockSelectedItem.item_stock, stockSelectedItem.isfractional)} · Доступно: {formatQty(stockSelectedItem.available_qty, stockSelectedItem.isfractional)}</span>
+                      </div>
                       <button
-                        key={item.item}
-                        className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
-                        onClick={() => selectStockItem(item)}
+                        type="button"
+                        className="secondary smallButton"
+                        onClick={() => {
+                          setStockSelectedItem(null)
+                          updateStockField('item', '')
+                        }}
                       >
-                        <div>
-                          <b>{item.item_name}</b>
-                          <span>Код {item.item} · {item.item_category || 'Без категории'}</span>
-                        </div>
-                        <div>
-                          <b>{formatMoney(item.price)}</b>
-                          <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
-                        </div>
+                        Сменить
                       </button>
-                    ))}
+                    </div>
+                  )}
 
-                    {stockSearchItems.length === 0 && (
-                      <div className="emptyBox">Товары не найдены</div>
-                    )}
-                  </div>
+                  {stockSearchItems.length > 0 && (
+                    <div className="stockSearchResults">
+                      {stockSearchItems.map((item) => (
+                        <button
+                          key={item.item}
+                          className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                          onClick={() => selectStockItem(item)}
+                        >
+                          <div>
+                            <b>{item.item_name}</b>
+                            <span>Код {item.item} · {getProductKindLabel(item)}</span>
+                          </div>
+                          <div>
+                            <b>{formatMoney(item.price)}</b>
+                            <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="stockField stockFull">
+                  <label>Количество прихода</label>
+                  <input
+                    value={stockForm.qty_delta}
+                    onChange={(e) => updateStockField('qty_delta', e.target.value)}
+                    placeholder="Например 1 или 1.250"
+                    inputMode="decimal"
+                  />
                 </div>
 
                 <label className="stockFull">Комментарий</label>
@@ -4176,7 +4219,7 @@ async function openOrder(orderNumber: number) {
                 <button className="secondary" onClick={() => setStockDialogOpen(false)} disabled={stockLoading}>
                   Закрыть
                 </button>
-                <button className="primary" onClick={stockReceipt} disabled={stockLoading}>
+                <button className="primary" onClick={stockReceipt} disabled={stockLoading || !stockForm.item}>
                   {stockLoading ? 'Оприходуем...' : 'Оприходовать'}
                 </button>
               </div>
