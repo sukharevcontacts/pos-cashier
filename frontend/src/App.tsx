@@ -4,7 +4,7 @@ import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
 type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | null
-type SideMenuTab = 'root' | 'settings' | 'reports'
+type SideMenuTab = 'root' | 'shareholder' | 'stock' | 'chats' | 'reports' | 'settings'
 
 type CashierSettings = {
   cashier_account: number | string
@@ -1188,9 +1188,17 @@ function App() {
                 <button
                   type="button"
                   className="sideMenuTabButton"
-                  onClick={() => setSideMenuTab('settings')}
+                  onClick={() => setSideMenuTab('stock')}
                 >
-                  2. Настройки
+                  2. Запасы
+                </button>
+
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('chats')}
+                >
+                  3. Чаты
                 </button>
 
                 <button
@@ -1198,7 +1206,15 @@ function App() {
                   className="sideMenuTabButton"
                   onClick={() => setSideMenuTab('reports')}
                 >
-                  3. Отчеты
+                  4. Отчеты
+                </button>
+
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('settings')}
+                >
+                  5. Настройки
                 </button>
               </div>
 
@@ -1213,6 +1229,44 @@ function App() {
             </div>
           )}
 
+          {sideMenuTab === 'stock' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>2. Запасы</span>
+                  <b>Запасы</b>
+                </div>
+              </div>
+
+              <div className="sideMenuEmptyState">
+                <b>Запасы в разработке</b>
+                <p>Скоро здесь появятся операции и отчеты по остаткам товаров на точке выдачи.</p>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'chats' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>3. Чаты</span>
+                  <b>Чаты</b>
+                </div>
+              </div>
+
+              <div className="sideMenuEmptyState">
+                <b>Чаты в разработке</b>
+                <p>Скоро здесь появятся чаты с пайщиками и сервисные уведомления.</p>
+              </div>
+            </div>
+          )}
+
           {sideMenuTab === 'settings' && (
             <div className="sideMenuSubWindow">
               <div className="sideMenuSubHeader">
@@ -1220,7 +1274,7 @@ function App() {
                   ← Меню
                 </button>
                 <div className="sideMenuSubTitle">
-                  <span>2. Настройки</span>
+                  <span>5. Настройки</span>
                   <b>Настройки кассы</b>
                 </div>
               </div>
@@ -1254,7 +1308,7 @@ function App() {
                   ← Меню
                 </button>
                 <div className="sideMenuSubTitle">
-                  <span>3. Отчеты</span>
+                  <span>4. Отчеты</span>
                   <b>Отчеты</b>
                 </div>
               </div>
