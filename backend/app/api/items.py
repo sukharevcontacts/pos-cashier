@@ -4,6 +4,10 @@ from typing import Optional
 from app.core.session import session_store
 from app.services.paritet.catalog import get_catalog
 from app.services.paritet.products import find_products, find_product_by_barcode
+from app.services.paritet.stock import (
+    post_goods as paritet_post_goods,
+    writeoff_goods as paritet_writeoff_goods,
+)
 
 router = APIRouter(prefix="/cashier/items", tags=["items"])
 
@@ -84,3 +88,62 @@ async def search_products(
 
     except Exception as e:
         raise HTTPException(400, str(e))
+
+@router.post("/goods/post")
+async def post_goods_route(
+    product_id: int = Query(...),
+    count: float = Query(...),
+    store_id: int = Query(...),
+    x_session_id: str = Header(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        await paritet_post_goods(
+            token=session.token,
+            tvt_id=store_id,
+            warehouse_id=session.warehouse_id,  # ✅ ключевое изменение
+            product_id=product_id,
+            count=count,
+        )
+
+        return {
+            "ok": True,
+            "product_id": product_id,
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка оприходования товара")
+        raise HTTPException(400, str(e))
+
+@router.post("/goods/writeoff")
+async def writeoff_goods_route(
+    product_id: int = Query(...),
+    count: float = Query(...),
+    store_id: int = Query(...),
+    x_session_id: str = Header(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        await paritet_writeoff_goods(
+            token=session.token,
+            tvt_id=store_id,
+            warehouse_id=session.warehouse_id,  # ✅ ключевое изменение
+            product_id=product_id,
+            count=count,
+        )
+
+        return {
+            "ok": True,
+            "product_id": product_id,
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка списания товара")
+        raise HTTPException(400, str(e))
+
