@@ -683,6 +683,8 @@ function App() {
   const [stockSearchQuery, setStockSearchQuery] = useState('')
   const [stockSearchLoading, setStockSearchLoading] = useState(false)
   const [stockSearchItems, setStockSearchItems] = useState<StoreItem[]>([])
+  const [stockQtyCaretIndex, setStockQtyCaretIndex] = useState(0)
+  const stockSearchInputRef = useRef<HTMLInputElement | null>(null)
   const [stockViewDialogOpen, setStockViewDialogOpen] = useState(false)
   const [stockViewQuery, setStockViewQuery] = useState('')
   const [stockViewLoading, setStockViewLoading] = useState(false)
@@ -1616,6 +1618,127 @@ function App() {
       ...prev,
       [field]: value,
     }))
+
+    if (field === 'qty_delta') {
+      setStockQtyCaretIndex(String(value || '').length)
+    }
+  }
+
+  function isStockQtyFractional() {
+    return stockSelectedItem?.isfractional === true
+  }
+
+  function normalizeStockQtyValue(value: string) {
+    if (!isStockQtyFractional()) {
+      return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
+    }
+
+    let cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    const dotIndex = cleaned.indexOf('.')
+
+    if (dotIndex !== -1) {
+      cleaned =
+        cleaned.slice(0, dotIndex + 1) +
+        cleaned.slice(dotIndex + 1).replace(/\./g, '')
+    }
+
+    cleaned = cleaned.replace(/^0+(?=\d)/, '')
+
+    return cleaned
+  }
+
+  function setStockQtyDraft(nextValue: string) {
+    const normalized = normalizeStockQtyValue(nextValue)
+    updateStockField('qty_delta', normalized)
+    setStockQtyCaretIndex(normalized.length)
+  }
+
+  function insertStockQtyText(valueToInsert: string) {
+    if (stockLoading || !stockSelectedItem) return
+
+    const isFractional = isStockQtyFractional()
+    const current = String(stockForm.qty_delta || '')
+    const caret = Math.max(0, Math.min(stockQtyCaretIndex, current.length))
+
+    if (!isFractional && valueToInsert === '.') {
+      return
+    }
+
+    if (isFractional && valueToInsert === '.' && current.includes('.')) {
+      return
+    }
+
+    let insertValue = valueToInsert
+
+    if (isFractional && valueToInsert === '.' && current.length === 0) {
+      insertValue = '0.'
+    }
+
+    let next = current.slice(0, caret) + insertValue + current.slice(caret)
+
+    if (current === '0' && valueToInsert !== '.' && caret === 1) {
+      next = valueToInsert
+    }
+
+    next = normalizeStockQtyValue(next)
+
+    const nextCaret = Math.max(0, Math.min(caret + insertValue.length, next.length))
+
+    updateStockField('qty_delta', next)
+    setStockQtyCaretIndex(nextCaret)
+  }
+
+  function appendStockQtyDigit(digit: string) {
+    insertStockQtyText(digit)
+  }
+
+  function appendStockQtyDot() {
+    insertStockQtyText('.')
+  }
+
+  function backspaceStockQtyDraft() {
+    if (stockLoading) return
+
+    const current = String(stockForm.qty_delta || '')
+    const caret = Math.max(0, Math.min(stockQtyCaretIndex, current.length))
+
+    if (caret <= 0) {
+      return
+    }
+
+    const next = current.slice(0, caret - 1) + current.slice(caret)
+
+    updateStockField('qty_delta', next)
+    setStockQtyCaretIndex(caret - 1)
+  }
+
+  function clearStockQtyDraft() {
+    if (stockLoading) return
+
+    updateStockField('qty_delta', '')
+    setStockQtyCaretIndex(0)
+  }
+
+  function changeStockQtyDraft(delta: number) {
+    if (stockLoading || !stockSelectedItem) return
+
+    const current = Number(stockForm.qty_delta || 0)
+    const step = stockSelectedItem.isfractional ? 0.001 : 1
+    const next = Math.max(0, current + delta * step)
+    const nextValue = stockSelectedItem.isfractional
+      ? next.toFixed(3)
+      : String(Math.round(next))
+
+    setStockQtyDraft(nextValue)
+  }
+
+  function changeStockSelectedItem() {
+    setStockSelectedItem(null)
+    updateStockField('item', '')
+    setStockMessage('Выберите новый товар через поиск или кнопку «Выбрать товар»')
+    window.setTimeout(() => {
+      stockSearchInputRef.current?.focus()
+    }, 0)
   }
 
   async function searchProductsForSelector(query: string, options: { limit?: number } = {}) {
@@ -1682,6 +1805,7 @@ function App() {
   function selectStockItem(item: StoreItem) {
     setStockSelectedItem(item)
     updateStockField('item', String(item.item))
+    setStockQtyCaretIndex(String(stockForm.qty_delta || '').length)
     setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
   }
 
@@ -4120,6 +4244,7 @@ async function openOrder(orderNumber: number) {
                   <label>Товар</label>
                   <div className="stockSearchRow productSelectorSearchRow">
                     <input
+                      ref={stockSearchInputRef}
                       value={stockSearchQuery}
                       onChange={(e) => setStockSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
@@ -4161,12 +4286,9 @@ async function openOrder(orderNumber: number) {
                       <button
                         type="button"
                         className="secondary smallButton"
-                        onClick={() => {
-                          setStockSelectedItem(null)
-                          updateStockField('item', '')
-                        }}
+                        onClick={changeStockSelectedItem}
                       >
-                        Сменить
+                        Сменить товар
                       </button>
                     </div>
                   )}
@@ -4193,14 +4315,126 @@ async function openOrder(orderNumber: number) {
                   )}
                 </div>
 
-                <div className="stockField stockFull">
+                <div className="stockField stockFull stockQtyBlock">
                   <label>Количество прихода</label>
-                  <input
-                    value={stockForm.qty_delta}
-                    onChange={(e) => updateStockField('qty_delta', e.target.value)}
-                    placeholder="Например 1 или 1.250"
-                    inputMode="decimal"
-                  />
+
+                  {!stockSelectedItem ? (
+                    <div className="emptyBox stockQtyHint">
+                      Сначала выберите товар. После выбора откроется клавиатура количества: для штучного товара без точки, для весового — с десятичной точкой.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="qtyControl stockQtyControl">
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(-1)}
+                          disabled={stockLoading}
+                        >
+                          -
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyDisplay"
+                          aria-label="Количество прихода"
+                          onClick={() => setStockQtyCaretIndex(String(stockForm.qty_delta || '').length)}
+                        >
+                          {String(stockForm.qty_delta || '0').split('').map((char, index) => (
+                            <span
+                              key={`${char}-${index}`}
+                              className="qtyDigitSlot"
+                              onClick={(e) => {
+                                e.stopPropagation()
+
+                                if (!stockForm.qty_delta) {
+                                  setStockQtyCaretIndex(0)
+                                  return
+                                }
+
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                                setStockQtyCaretIndex(nextIndex)
+                              }}
+                            >
+                              {stockForm.qty_delta && stockQtyCaretIndex === index && <span className="qtyCaret" />}
+                              {char}
+                            </span>
+                          ))}
+                          {stockForm.qty_delta && stockQtyCaretIndex >= String(stockForm.qty_delta).length && <span className="qtyCaret" />}
+                          {!stockForm.qty_delta && <span className="qtyCaret" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(1)}
+                          disabled={stockLoading}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <div className="qtyKeypad stockQtyKeypad" aria-label="Цифровая клавиатура прихода">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                          <button
+                            key={digit}
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={() => appendStockQtyDigit(digit)}
+                            disabled={stockLoading}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn secondary"
+                          onClick={backspaceStockQtyDraft}
+                          disabled={stockLoading}
+                        >
+                          ←
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn"
+                          onClick={() => appendStockQtyDigit('0')}
+                          disabled={stockLoading}
+                        >
+                          0
+                        </button>
+
+                        {stockSelectedItem.isfractional ? (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={appendStockQtyDot}
+                            disabled={stockLoading}
+                          >
+                            .
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn secondary"
+                            onClick={clearStockQtyDraft}
+                            disabled={stockLoading}
+                          >
+                            C
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="muted stockQtyKindHint">
+                        {stockSelectedItem.isfractional
+                          ? `Весовой товар: можно вводить дробное количество, ${stockSelectedItem.unit || stockSelectedItem.pack || 'кг'}`
+                          : 'Штучный товар: ввод только целыми числами'}
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <label className="stockFull">Комментарий</label>

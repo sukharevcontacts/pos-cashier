@@ -3111,3 +3111,39 @@ body[data-screen-profile="tablet_10"] .selectedProductCard b {
 body[data-screen-profile="tablet_10"] .selectedProductCard span {
   font-size: 12px;
 }
+
+/* Количество в окне Приход: используем ту же кастомную клавиатуру, что и в заказе */
+.stockQtyBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.stockQtyControl {
+  margin-top: 0;
+}
+
+.stockQtyKeypad {
+  margin-top: 0;
+}
+
+.stockQtyHint {
+  margin-top: 0;
+  text-align: left;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.stockQtyKindHint {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .stockQtyBlock {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockQtyKindHint,
+body[data-screen-profile="tablet_10"] .stockQtyHint {
+  font-size: 12px;
+}
