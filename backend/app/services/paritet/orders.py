@@ -80,6 +80,8 @@ async def get_order_details(
             "order_line_id": int(item.get("id")),
             "order_number": int(payload.get("number")),
             "item": product.get("id"),
+            "isfractional": product.get("isfractional"),
+            "unit": product.get("unit"),
 
             "item_name": product.get("name"),
             "photo_url": product.get("preview"),

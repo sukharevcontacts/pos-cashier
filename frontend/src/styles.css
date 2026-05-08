@@ -1401,30 +1401,52 @@ body[data-screen-profile="tablet_10"] .confirmDialogBody {
 
 
 
-/* Выделение весовых товаров в заказе */
+/* Выделение весовых товаров в заказе: информационная голубая подсветка */
 .weightLineRow {
-  background: #fff3cd;
-  border-color: #d69e00;
-  box-shadow: inset 7px 0 0 #d69e00;
+  background: #e8f4ff;
+  border-color: #3b82f6;
+  box-shadow: inset 7px 0 0 #3b82f6;
 }
 
 .weightLineRow:hover {
-  background: #ffe8a3;
-  border-color: #b77900;
+  background: #dbeafe;
+  border-color: #2563eb;
 }
 
 .weightLineRow b {
-  color: #3d2b00;
+  color: #0f3d7a;
 }
 
 .weightLineRow small {
+  color: #1e4f8f;
+}
+
+body[data-screen-profile="tablet_10"] .weightLineRow {
+  box-shadow: inset 6px 0 0 #3b82f6;
+}
+
+/* Несохраненные/измененные строки важнее типа товара: оставляем warning-желтый */
+.lineRow.unsavedLineRow {
+  background: #fff7cc;
+  border-color: #facc15;
+  box-shadow: inset 7px 0 0 #facc15;
+}
+
+.lineRow.unsavedLineRow:hover {
+  background: #fff1a8;
+  border-color: #eab308;
+}
+
+.lineRow.unsavedLineRow b {
+  color: #3d2b00;
+}
+
+.lineRow.unsavedLineRow small {
   color: #6b4e00;
 }
 
-
-
-body[data-screen-profile="tablet_10"] .weightLineRow {
-  box-shadow: inset 6px 0 0 #d69e00;
+body[data-screen-profile="tablet_10"] .lineRow.unsavedLineRow {
+  box-shadow: inset 6px 0 0 #facc15;
 }
 
 

@@ -140,7 +140,6 @@ type OrderLine = {
   item: number
   item_name: string
   photo_url: string | null
-  item_type: 'piece' | 'weight'
   avg_weight: number | null
   pack: string | null
   qty: number
@@ -168,7 +167,6 @@ type StoreItem = {
   item_category: string | null
   item_subcategory: string | null
   photo_url: string | null
-  item_type: 'piece' | 'weight'
   avg_weight: number | null
   pack: string | null
   price: number
@@ -238,7 +236,8 @@ type OrderReceiptResponse = {
     order_line_id: number
     item: number
     item_name: string
-    item_type: 'piece' | 'weight'
+    isfractional?: boolean | null
+    item_type?: 'piece' | 'weight'
     pack: string | null
     qty_final: number
     price: number
@@ -289,10 +288,14 @@ function formatMoney(value: number | string | null | undefined) {
   })
 }
 
-function formatQty(value: number | null | undefined, itemType?: string) {
+function isFractionalFlag(value: unknown) {
+  return value === true || value === 'true' || value === 'weight'
+}
+
+function formatQty(value: number | null | undefined, isfractional?: boolean | string | null) {
   const n = Number(value ?? 0)
 
-  if (itemType === 'piece') {
+  if (!isFractionalFlag(isfractional)) {
     return n.toLocaleString('ru-RU', {
       maximumFractionDigits: 0,
     })
@@ -447,7 +450,6 @@ function mapParitetProductToStoreItem(product: any): StoreItem {
     item_category: product?.category != null ? String(product.category) : null,
     item_subcategory: null,
     photo_url: product?.preview ?? null,
-    item_type: isFractional ? 'weight' : 'piece',
     avg_weight: null,
     pack: product?.unit ?? null,
     price: toNumber(product?.price, 0),
@@ -477,7 +479,6 @@ function mapParitetOrderLineToFront(item: any): OrderLine {
     item: mappedProduct.item,
     item_name: mappedProduct.item_name,
     photo_url: mappedProduct.photo_url,
-    item_type: mappedProduct.item_type,
     avg_weight: mappedProduct.avg_weight,
     pack: mappedProduct.pack,
     qty,
@@ -492,7 +493,7 @@ function mapParitetOrderLineToFront(item: any): OrderLine {
 }
 
 function mapStoreItemToOrderLine(product: StoreItem): OrderLine {
-  const qty = product.item_type === 'piece' ? 1 : 1
+  const qty = 1
   const tempLineId = -Date.now() - product.item
 
   return {
@@ -509,7 +510,6 @@ function mapStoreItemToOrderLine(product: StoreItem): OrderLine {
     item: product.item,
     item_name: product.item_name,
     photo_url: product.photo_url,
-    item_type: product.item_type,
     avg_weight: product.avg_weight,
     pack: product.pack,
     qty,
@@ -523,12 +523,48 @@ function mapStoreItemToOrderLine(product: StoreItem): OrderLine {
   }
 }
 
+function mapBackendOrderLineToFront(line: any): OrderLine {
+  const qtyFinal = toNumber(line?.qty_final ?? line?.qty, 0)
+  const price = toNumber(line?.price, 0)
+  const isfractional = isFractionalFlag(line?.isfractional ?? line?.item_type)
+  const item = toNumber(line?.item ?? line?.good_id ?? line?.id, 0)
+  const itemName = String(line?.item_name ?? line?.good_name ?? line?.name ?? '')
+  const unit = String(line?.unit ?? line?.pack ?? '')
+
+  return {
+    ...line,
+    order_line_id: line?.order_line_id != null ? toNumber(line.order_line_id, 0) : null,
+    good_id: toNumber(line?.good_id ?? item, item),
+    good_name: String(line?.good_name ?? itemName),
+    unit,
+    id: toNumber(line?.id ?? item, item),
+    name: String(line?.name ?? itemName),
+    code: line?.code ?? null,
+    isfractional,
+    is_local: Boolean(line?.is_local ?? false),
+    is_dirty: Boolean(line?.is_dirty ?? false),
+    item,
+    item_name: itemName,
+    photo_url: line?.photo_url ?? null,
+    avg_weight: line?.avg_weight ?? null,
+    pack: line?.pack ?? line?.unit ?? null,
+    qty: toNumber(line?.qty ?? qtyFinal, qtyFinal),
+    price,
+    qty_final: qtyFinal,
+    line_sum: toNumber(line?.line_sum, qtyFinal * price),
+    item_stock: toNumber(line?.item_stock, 0),
+    reserve: toNumber(line?.reserve, 0),
+    available_qty: toNumber(line?.available_qty, 0),
+    max_qty_final: toNumber(line?.max_qty_final, qtyFinal + toNumber(line?.available_qty, 0)),
+  }
+}
+
 function mapParitetOrderToFrontResponse(data: any, foundUser: FoundUser, selectedStore: Store): OrderDetailsResponse {
   const payload = data?.payload || data || {}
   const lines = Array.isArray(payload.items)
     ? payload.items.map(mapParitetOrderLineToFront)
     : Array.isArray(data?.lines)
-      ? data.lines
+      ? data.lines.map(mapBackendOrderLineToFront)
       : []
 
   const orderSum = toNumber(payload.price, lines.reduce((sum: number, line: OrderLine) => sum + toNumber(line.line_sum, 0), 0))
@@ -2477,7 +2513,7 @@ async function openOrder(orderNumber: number) {
           return lines.map((line, index) => {
             if (index !== existingIndex) return line
 
-            const step = line.item_type === 'piece' ? 1 : 1
+            const step = 1
             const nextQty = toNumber(line.qty_final, 0) + step
             return recalcOrderLine(line, nextQty)
           })
@@ -2643,12 +2679,12 @@ async function openOrder(orderNumber: number) {
     if (!qtyDialogLine) return
 
     const current = Number(qtyDraft || 0)
-    const step = qtyDialogLine.item_type === 'piece' ? 1 : 0.001
+    const step = qtyDialogLine.isfractional ? 0.001 : 1
     const next = Math.max(0, current + delta * step)
 
-    const nextValue = qtyDialogLine.item_type === 'piece'
-      ? String(Math.round(next))
-      : next.toFixed(3)
+    const nextValue = qtyDialogLine.isfractional
+      ? next.toFixed(3)
+      : String(Math.round(next))
 
     setQtyDraft(nextValue)
     setQtyCaretIndex(nextValue.length)
@@ -2657,7 +2693,7 @@ async function openOrder(orderNumber: number) {
   function normalizeQtyValue(value: string) {
     if (!qtyDialogLine) return value
 
-    if (qtyDialogLine.item_type === 'piece') {
+    if (!qtyDialogLine.isfractional) {
       return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
     }
 
@@ -2681,17 +2717,17 @@ async function openOrder(orderNumber: number) {
     const current = String(qtyDraft || '')
     const caret = Math.max(0, Math.min(qtyCaretIndex, current.length))
 
-    if (qtyDialogLine.item_type === 'piece' && valueToInsert === '.') {
+    if (!qtyDialogLine.isfractional && valueToInsert === '.') {
       return
     }
 
-    if (qtyDialogLine.item_type === 'weight' && valueToInsert === '.' && current.includes('.')) {
+    if (qtyDialogLine.isfractional && valueToInsert === '.' && current.includes('.')) {
       return
     }
 
     let insertValue = valueToInsert
 
-    if (qtyDialogLine.item_type === 'weight' && valueToInsert === '.' && current.length === 0) {
+    if (qtyDialogLine.isfractional && valueToInsert === '.' && current.length === 0) {
       insertValue = '0.'
     }
 
@@ -3209,7 +3245,7 @@ async function openOrder(orderNumber: number) {
                   <button
                     className={[
                       'lineRow',
-                      line.item_type === 'weight' ? 'weightLineRow' : '',
+                      line.isfractional ? 'weightLineRow' : '',
                       isOrderLineUnsaved(line) ? 'unsavedLineRow' : '',
                       'swipeLineRow',
                       swipeDragLineId === getOrderLineUiId(line) ? 'swipeDragging' : '',
@@ -3226,10 +3262,10 @@ async function openOrder(orderNumber: number) {
                     <span>
                       <b>{line.item_name}</b>
                       <small>
-                        Код {line.item} · {line.item_type === 'weight' ? `Весовой, ${line.pack ?? 'кг'}` : 'Штучный'}
+                        Код {line.item} · {line.isfractional ? `Весовой, ${line.pack ?? 'кг'}` : 'Штучный'}
                       </small>
                     </span>
-                    <span>{formatQty(line.qty_final, line.item_type)}</span>
+                    <span>{formatQty(line.qty_final, line.isfractional)}</span>
                     <span>{formatMoney(line.price)}</span>
                     <span>{formatMoney(line.line_sum)}</span>
                   </button>
@@ -3317,13 +3353,13 @@ async function openOrder(orderNumber: number) {
                           ID {item.item}{item.code ? ` · ШК ${item.code}` : ''} · {item.item_category || 'Без категории'}
                         </span>
                         <span>
-                          {item.item_type === 'weight' ? `Весовой · ${item.pack || 'кг'}` : 'Штучный товар'}
+                          {item.isfractional ? `Весовой · ${item.pack || 'кг'}` : 'Штучный товар'}
                         </span>
                       </div>
 
                       <div className="itemNumbers">
                         <b>{formatMoney(item.price)}</b>
-                        <span>Доступно: {formatQty(item.available_qty, item.item_type)}</span>
+                        <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
                         <span>Добавить</span>
                       </div>
                     </button>
@@ -3454,7 +3490,7 @@ async function openOrder(orderNumber: number) {
                               <b>{line.item_name}</b>
                               <span>Код {line.item}</span>
                             </div>
-                            <div>{formatQty(line.qty_final, line.item_type)}</div>
+                            <div>{formatQty(line.qty_final, line.isfractional)}</div>
                             <div>{formatMoney(line.price)}</div>
                             <div>{formatMoney(line.line_sum)}</div>
                           </div>
@@ -3494,10 +3530,10 @@ async function openOrder(orderNumber: number) {
                       <div>
                         <b>{qtyDialogLine.item_name}</b>
                         <p className="muted">
-                          Код {qtyDialogLine.item} · {qtyDialogLine.item_type === 'weight' ? `Весовой, ${qtyDialogLine.pack ?? 'кг'}` : 'Штучный'}
+                          Код {qtyDialogLine.item} · {qtyDialogLine.isfractional ? `Весовой, ${qtyDialogLine.pack ?? 'кг'}` : 'Штучный'}
                         </p>
                         <p className="muted">
-                          Максимум: {formatQty(qtyDialogLine.max_qty_final, qtyDialogLine.item_type)}
+                          Максимум: {formatQty(qtyDialogLine.max_qty_final, qtyDialogLine.isfractional)}
                         </p>
                       </div>
                     </div>
@@ -3571,7 +3607,7 @@ async function openOrder(orderNumber: number) {
                       >
                         0
                       </button>
-                      {qtyDialogLine.item_type === 'weight' ? (
+                      {qtyDialogLine.isfractional ? (
                         <button
                           type="button"
                           className="qtyKeyBtn"
@@ -3646,7 +3682,7 @@ async function openOrder(orderNumber: number) {
                     <p>Товар будет удален из заказа, а резерв по этой позиции вернется в доступный остаток.</p>
                     <div className="lineDeleteSummary">
                       <span>Количество</span>
-                      <b>{formatQty((deleteLineDialogLine || qtyDialogLine)!.qty_final, (deleteLineDialogLine || qtyDialogLine)!.item_type)}</b>
+                      <b>{formatQty((deleteLineDialogLine || qtyDialogLine)!.qty_final, (deleteLineDialogLine || qtyDialogLine)!.isfractional)}</b>
                     </div>
                   </div>
 
@@ -3780,17 +3816,17 @@ async function openOrder(orderNumber: number) {
                             Код {item.item} · {item.item_category || 'Без категории'}
                           </span>
                           <span>
-                            {item.item_type === 'weight'
-                              ? `Весовой · средний вес ${formatQty(item.avg_weight, 'weight')} кг · ${item.pack || 'кг'}`
+                            {item.isfractional
+                              ? `Весовой · средний вес ${formatQty(item.avg_weight, true)} кг · ${item.pack || 'кг'}`
                               : 'Штучный товар'}
                           </span>
                         </div>
 
                         <div className="itemNumbers">
                           <b>{formatMoney(item.price)}</b>
-                          <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
-                          <span>Резерв: {formatQty(item.reserve, item.item_type)}</span>
-                          <span>Доступно: {formatQty(item.available_qty, item.item_type)}</span>
+                          <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                          <span>Резерв: {formatQty(item.reserve, item.isfractional)}</span>
+                          <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
                           <span>Добавить</span>
                         </div>
                       </button>
@@ -3967,10 +4003,10 @@ async function openOrder(orderNumber: number) {
                       </span>
                     </div>
                     <div>{formatMoney(item.price)}</div>
-                    <div>{formatQty(item.item_stock, item.item_type)}</div>
-                    <div>{formatQty(item.reserve, item.item_type)}</div>
+                    <div>{formatQty(item.item_stock, item.isfractional)}</div>
+                    <div>{formatQty(item.reserve, item.isfractional)}</div>
                     <div>
-                      <b>{formatQty(item.available_qty, item.item_type)}</b>
+                      <b>{formatQty(item.available_qty, item.isfractional)}</b>
                     </div>
                   </div>
                 ))}
@@ -4059,7 +4095,7 @@ async function openOrder(orderNumber: number) {
                         </div>
                         <div>
                           <b>{formatMoney(item.price)}</b>
-                          <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
+                          <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
                         </div>
                       </button>
                     ))}
