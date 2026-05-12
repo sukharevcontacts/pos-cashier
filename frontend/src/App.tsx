@@ -255,6 +255,8 @@ type OrderReceiptResponse = {
 const API_BASE = '/pos-api'
 const SESSION_ID_STORAGE_KEY = 'session_id'
 const STORE_ID_STORAGE_KEY = 'store_id'
+const CASHIER_STORAGE_KEY = 'cashier'
+const STORES_STORAGE_KEY = 'stores'
 
 function readStoredSessionId() {
   if (typeof window === 'undefined') return ''
@@ -279,6 +281,62 @@ function saveStoredStoreId(value: number | string) {
 function clearStoredStoreId() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(STORE_ID_STORAGE_KEY)
+}
+
+function readStoredStoreId() {
+  if (typeof window === 'undefined') return ''
+  return window.sessionStorage.getItem(STORE_ID_STORAGE_KEY) || ''
+}
+
+function readStoredJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+
+  try {
+    const raw = window.sessionStorage.getItem(key)
+    return raw ? JSON.parse(raw) as T : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveStoredJson(key: string, value: unknown) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(key, JSON.stringify(value))
+}
+
+function clearStoredJson(key: string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(key)
+}
+
+function readStoredCashier(): Cashier | null {
+  return readStoredJson<Cashier | null>(CASHIER_STORAGE_KEY, null)
+}
+
+function saveStoredCashier(value: Cashier) {
+  saveStoredJson(CASHIER_STORAGE_KEY, value)
+}
+
+function clearStoredCashier() {
+  clearStoredJson(CASHIER_STORAGE_KEY)
+}
+
+function readStoredStores(): Store[] {
+  return readStoredJson<Store[]>(STORES_STORAGE_KEY, [])
+}
+
+function saveStoredStores(value: Store[]) {
+  saveStoredJson(STORES_STORAGE_KEY, value)
+}
+
+function clearStoredStores() {
+  clearStoredJson(STORES_STORAGE_KEY)
+}
+
+function readStoredSelectedStore(stores: Store[]) {
+  const storedStoreId = readStoredStoreId()
+  if (!storedStoreId) return null
+  return stores.find((store) => String(store.store_id) === String(storedStoreId)) || null
 }
 
 function formatMoney(value: number | string | null | undefined) {
@@ -634,9 +692,9 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [sessionId, setSessionId] = useState(() => readStoredSessionId())
-  const [cashier, setCashier] = useState<Cashier | null>(null)
-  const [stores, setStores] = useState<Store[]>([])
-  const [selectedStore, setSelectedStore] = useState<Store | null>(null)
+  const [cashier, setCashier] = useState<Cashier | null>(() => readStoredCashier())
+  const [stores, setStores] = useState<Store[]>(() => readStoredStores())
+  const [selectedStore, setSelectedStore] = useState<Store | null>(() => readStoredSelectedStore(readStoredStores()))
   const [storeSelectLoading, setStoreSelectLoading] = useState(false)
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
   const [sideMenuTab, setSideMenuTab] = useState<SideMenuTab>('root')
@@ -676,6 +734,7 @@ function App() {
   const [stockDialogOpen, setStockDialogOpen] = useState(false)
   const [stockLoading, setStockLoading] = useState(false)
   const [stockMessage, setStockMessage] = useState('')
+  const [stockSuccessDialog, setStockSuccessDialog] = useState<{ itemName: string; qty: string } | null>(null)
   const [stockForm, setStockForm] = useState({
     item: '',
     qty_delta: '',
@@ -864,6 +923,8 @@ function App() {
   function handleUnauthorizedResponse() {
     clearStoredSessionId()
     clearStoredStoreId()
+    clearStoredCashier()
+    clearStoredStores()
     clearWorkplaceState()
 
     setSessionId('')
@@ -1393,6 +1454,8 @@ function App() {
       const data: LoginResponse = await res.json()
 
       saveStoredSessionId(data.session_id)
+      saveStoredCashier(data.cashier)
+      saveStoredStores(data.stores)
       setSessionId(data.session_id)
       setCashier(data.cashier)
       setStores(data.stores)
@@ -1786,6 +1849,7 @@ function App() {
 
   function resetStockReceiptState() {
     setStockMessage('')
+    setStockSuccessDialog(null)
     setStockForm({
       item: '',
       qty_delta: '',
@@ -1830,11 +1894,17 @@ function App() {
     }
   }
 
-  async function searchProductsForSelector(query: string, options: { limit?: number } = {}) {
+  async function searchProductsForSelector(query: string, options: { limit?: number; showavailable?: boolean } = {}) {
     if (!cashier || !selectedStore) return []
 
     const normalizedQuery = query.trim()
     const params = buildItemSearchParams(normalizedQuery)
+    const searchParam = getItemSearchParam(normalizedQuery)
+
+    if (searchParam?.key === 'q') {
+      params.set('showavailable', options.showavailable === false ? 'false' : 'true')
+    }
+
     const queryString = params.toString()
     const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
 
@@ -1873,7 +1943,8 @@ function App() {
 
     try {
       const limit = target === 'picker' ? 100 : target === 'stockView' ? 150 : 30
-      const items = await searchProductsForSelector(query, { limit })
+      const showavailable = target === 'stockReceipt' ? false : true
+      const items = await searchProductsForSelector(query, { limit, showavailable })
       setItems(items)
     } catch (e: any) {
       setItems([])
@@ -1982,9 +2053,14 @@ function App() {
         throw new Error(data?.detail || 'Не удалось оприходовать товар')
       }
 
-      setStockMessage(
-        `Оприходовано: ${stockSelectedItem?.item_name || `товар ${itemCode}`} · количество ${formatQty(qtyDelta, stockSelectedItem?.isfractional)}`
-      )
+      const successItemName = stockSelectedItem?.item_name || `товар ${itemCode}`
+      const successQty = formatQty(qtyDelta, stockSelectedItem?.isfractional)
+
+      setStockMessage(`Оприходовано: ${successItemName} · количество ${successQty}`)
+      setStockSuccessDialog({
+        itemName: successItemName,
+        qty: successQty,
+      })
 
       setStockForm((prev) => ({
         ...prev,
@@ -2521,6 +2597,7 @@ async function openOrder(orderNumber: number) {
 
     setStockDialogOpen(false)
     setStockMessage('')
+    setStockSuccessDialog(null)
     setStockForm({
       item: '',
       qty_delta: '',
@@ -2545,6 +2622,8 @@ async function openOrder(orderNumber: number) {
     clearWorkplaceState()
 
     clearStoredSessionId()
+    clearStoredCashier()
+    clearStoredStores()
 
     setCashier(null)
     setStores([])
@@ -2704,6 +2783,12 @@ async function openOrder(orderNumber: number) {
 
     try {
       const params = buildItemSearchParams(normalizedQuery)
+      const searchParam = getItemSearchParam(normalizedQuery)
+
+      if (searchParam?.key === 'q') {
+        params.set('showavailable', 'true')
+      }
+
       const queryString = params.toString()
       const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
 
@@ -3724,6 +3809,39 @@ async function openOrder(orderNumber: number) {
             </div>
           </section>
         </main>
+
+        {stockSuccessDialog && (
+          <div className="qtyOverlay">
+            <div className="confirmDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Операция выполнена</h2>
+                  <p className="muted">Товар успешно оприходован на выбранную точку выдачи.</p>
+                </div>
+              </div>
+
+              <div className="confirmDialogBody">
+                <div className="confirmDialogSummary">
+                  <span>Товар</span>
+                  <b>{stockSuccessDialog.itemName}</b>
+                </div>
+                <div className="confirmDialogSummary">
+                  <span>Количество</span>
+                  <b>{stockSuccessDialog.qty}</b>
+                </div>
+              </div>
+
+              <div className="confirmDialogActions">
+                <button className="secondary" onClick={() => setStockSuccessDialog(null)}>
+                  Ок
+                </button>
+                <button className="primary" onClick={closeStockReceiptScreen}>
+                  Закрыть приход
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

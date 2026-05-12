@@ -20,6 +20,7 @@ async def search_products(
     q: Optional[str] = Query(None),
     barcode: Optional[str] = Query(None),
     ids: Optional[str] = Query(None),
+    showavailable: Optional[bool] = Query(True),
     x_session_id: str = Header(...),
     store_id: int = Header(...)
 ):
@@ -62,7 +63,7 @@ async def search_products(
                     "category": -1,
                     "preview_width": 240,
                     "preview_height": 320,
-                    "showavailable": True,
+                    "showavailable": showavailable,
                     "warehouse": warehouse_id
                 }
             )
@@ -81,6 +82,7 @@ async def search_products(
                 "category": -1,
                 "preview_width": 240,
                 "preview_height": 320,
+                "showavailable": showavailable,
                 "warehouse": warehouse_id
             }
         )
