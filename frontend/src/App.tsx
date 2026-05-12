@@ -1860,8 +1860,15 @@ function App() {
 
   function changeStockSelectedItem() {
     setStockSelectedItem(null)
-    updateStockField('item', '')
-    setStockMessage('Выберите новый товар через поиск или кнопку «Выбрать товар»')
+    setStockForm((prev) => ({
+      ...prev,
+      item: '',
+      qty_delta: '',
+      comment: '',
+    }))
+    setStockQtyDraft('')
+    setStockQtyCaretIndex(0)
+    setStockMessage('Выберите новый товар из текущей выборки или через поиск')
     window.setTimeout(() => {
       stockSearchInputRef.current?.focus()
     }, 0)
@@ -4956,12 +4963,10 @@ async function openOrder(orderNumber: number) {
                           className="secondary smallButton"
                           onClick={() => {
                             setStockViewSelectedItem(null)
-                            setStockViewQuery('')
-                            setStockViewItems([])
                             setStockViewQty('')
                             setStockViewComment('')
                             setStockViewQtyCaretIndex(0)
-                            setStockViewMessage('Выберите новый товар через поиск или кнопку «Выбрать товар»')
+                            setStockViewMessage('Выберите новый товар из текущей выборки или через поиск')
                           }}
                         >
                           Сменить товар
