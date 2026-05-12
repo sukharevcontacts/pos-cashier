@@ -19,6 +19,7 @@ type Store = {
   store_address: string | null
   owner_account: number | null
   owner_balance: number | null
+  default_warehouse?: number | null
 }
 
 type Cashier = {
@@ -636,6 +637,7 @@ function App() {
   const [cashier, setCashier] = useState<Cashier | null>(null)
   const [stores, setStores] = useState<Store[]>([])
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
+  const [storeSelectLoading, setStoreSelectLoading] = useState(false)
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
   const [sideMenuTab, setSideMenuTab] = useState<SideMenuTab>('root')
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
@@ -891,9 +893,50 @@ function App() {
     return res
   }
 
-  function selectStore(store: Store) {
-    setSelectedStore(store)
-    saveStoredStoreId(store.store_id)
+  async function selectStore(store: Store, explicitSessionId?: string) {
+    const activeSessionId = explicitSessionId || sessionId || readStoredSessionId()
+
+    if (!activeSessionId) {
+      throw new Error('Нет активной сессии')
+    }
+
+    const defaultWarehouse = store.default_warehouse
+
+    if (defaultWarehouse == null) {
+      throw new Error('У точки выдачи не указан склад')
+    }
+
+    setStoreSelectLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/select-store`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': activeSessionId,
+        },
+        body: JSON.stringify({
+          session_id: activeSessionId,
+          store_id: store.store_id,
+          default_warehouse: defaultWarehouse,
+        }),
+      })
+
+      if (res.status === 401) {
+        handleUnauthorizedResponse()
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось выбрать точку выдачи'))
+      }
+
+      setSelectedStore(store)
+      saveStoredStoreId(store.store_id)
+    } finally {
+      setStoreSelectLoading(false)
+    }
   }
 
   async function loadCashierSettings(cashierAccountValue: number | string) {
@@ -1355,7 +1398,7 @@ function App() {
       setStores(data.stores)
 
       if (data.stores.length === 1) {
-        selectStore(data.stores[0])
+        await selectStore(data.stores[0], data.session_id)
       } else {
         clearStoredStoreId()
         setSelectedStore(null)
@@ -1741,12 +1784,23 @@ function App() {
     }, 0)
   }
 
-  function openStockReceiptScreen() {
-    setStockDialogOpen(true)
+  function resetStockReceiptState() {
     setStockMessage('')
-    setError('')
+    setStockForm({
+      item: '',
+      qty_delta: '',
+      comment: '',
+    })
+    setStockSelectedItem(null)
     setStockSearchQuery('')
     setStockSearchItems([])
+    setStockQtyCaretIndex(0)
+  }
+
+  function openStockReceiptScreen() {
+    resetStockReceiptState()
+    setStockDialogOpen(true)
+    setError('')
     window.setTimeout(() => {
       stockSearchInputRef.current?.focus()
     }, 0)
@@ -1754,7 +1808,7 @@ function App() {
 
   function closeStockReceiptScreen() {
     setStockDialogOpen(false)
-    setStockMessage('')
+    resetStockReceiptState()
     setError('')
   }
 
@@ -5286,18 +5340,21 @@ async function openOrder(orderNumber: number) {
                 <button
                   key={store.store_id}
                   className="storeButton"
-                  onClick={() => selectStore(store)}
+                  onClick={() => selectStore(store).catch((e: any) => {
+                    setError(e.message || 'Ошибка выбора точки выдачи')
+                  })}
+                  disabled={storeSelectLoading}
                 >
                   <span className="storeName">{store.store_name}</span>
                   <span className="storeAddress">{store.store_address || 'Адрес не указан'}</span>
                   <span className="storeMeta">
-                    ТВТ {store.store_id} · Владелец {store.owner_account ?? '—'}
+                    ТВТ {store.store_id} · Склад {store.default_warehouse ?? '—'} · Владелец {store.owner_account ?? '—'}
                   </span>
                 </button>
               ))}
             </div>
 
-            <button className="secondary full" onClick={logoutCashier}>
+            <button className="secondary full" onClick={logoutCashier} disabled={storeSelectLoading}>
               Выйти
             </button>
           </div>
