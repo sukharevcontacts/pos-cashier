@@ -750,6 +750,14 @@ function App() {
   const [stockViewQuery, setStockViewQuery] = useState('')
   const [stockViewLoading, setStockViewLoading] = useState(false)
   const [stockViewItems, setStockViewItems] = useState<StoreItem[]>([])
+  const [stockViewSelectedItem, setStockViewSelectedItem] = useState<StoreItem | null>(null)
+  const [stockViewOperation, setStockViewOperation] = useState<'post' | 'writeoff'>('post')
+  const [stockViewQty, setStockViewQty] = useState('')
+  const [stockViewComment, setStockViewComment] = useState('')
+  const [stockViewQtyCaretIndex, setStockViewQtyCaretIndex] = useState(0)
+  const [stockViewMessage, setStockViewMessage] = useState('')
+  const [stockViewConfirmOpen, setStockViewConfirmOpen] = useState(false)
+  const [stockViewSuccessDialog, setStockViewSuccessDialog] = useState<{ itemName: string; qty: string; operation: 'post' | 'writeoff' } | null>(null)
 
 
   const [orderDetails, setOrderDetails] = useState<OrderDetailsResponse | null>(null)
@@ -806,7 +814,7 @@ function App() {
   }, [cashier, orderDetails])
 
   const [itemPickerOpen, setItemPickerOpen] = useState(false)
-  const [itemPickerMode, setItemPickerMode] = useState<'order' | 'stockReceipt'>('order')
+  const [itemPickerMode, setItemPickerMode] = useState<'order' | 'stockReceipt' | 'stockView'>('order')
   const [itemSearchQuery, setItemSearchQuery] = useState('')
   const [itemsLoading, setItemsLoading] = useState(false)
   const [quickItemCode, setQuickItemCode] = useState('')
@@ -1296,7 +1304,10 @@ function App() {
                 <button
                   type="button"
                   className="sideMenuTabButton"
-                  onClick={() => setSideMenuTab('stock')}
+                  onClick={() => {
+                    closeSideMenu()
+                    void openStockViewDialog()
+                  }}
                 >
                   2. Запасы
                 </button>
@@ -1350,8 +1361,18 @@ function App() {
               </div>
 
               <div className="sideMenuEmptyState">
-                <b>Запасы в разработке</b>
-                <p>Скоро здесь появятся операции и отчеты по остаткам товаров на точке выдачи.</p>
+                <b>Экран запасов</b>
+                <p>Поиск товара, оприходование и списание доступны в основном экране «Запасы».</p>
+                <button
+                  type="button"
+                  className="primary full"
+                  onClick={() => {
+                    closeSideMenu()
+                    void openStockViewDialog()
+                  }}
+                >
+                  Открыть запасы
+                </button>
               </div>
             </div>
           )}
@@ -1969,46 +1990,265 @@ function App() {
     setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
   }
 
-  async function loadStockViewItems(query = stockViewQuery) {
-    if (!cashier || !selectedStore) return
+  function resetStockViewWorkState() {
+    setStockViewSelectedItem(null)
+    setStockViewOperation('post')
+    setStockViewQty('')
+    setStockViewComment('')
+    setStockViewQtyCaretIndex(0)
+    setStockViewMessage('')
+    setStockViewConfirmOpen(false)
+    setStockViewSuccessDialog(null)
+    setStockViewItems([])
+  }
 
-    const currentCashier = cashier
-    const currentStore = selectedStore
+  function selectStockViewItem(item: StoreItem) {
+    setStockViewSelectedItem(item)
+    setStockViewQty('')
+    setStockViewComment('')
+    setStockViewQtyCaretIndex(0)
+    setStockViewMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
+  }
+
+  function isStockViewQtyFractional() {
+    return stockViewSelectedItem?.isfractional === true
+  }
+
+  function normalizeStockViewQtyValue(value: string) {
+    if (!isStockViewQtyFractional()) {
+      return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
+    }
+
+    let cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    const dotIndex = cleaned.indexOf('.')
+
+    if (dotIndex !== -1) {
+      cleaned =
+        cleaned.slice(0, dotIndex + 1) +
+        cleaned.slice(dotIndex + 1).replace(/\./g, '')
+    }
+
+    cleaned = cleaned.replace(/^0+(?=\d)/, '')
+
+    return cleaned
+  }
+
+  function setStockViewQtyDraft(nextValue: string) {
+    const normalized = normalizeStockViewQtyValue(nextValue)
+    setStockViewQty(normalized)
+    setStockViewQtyCaretIndex(normalized.length)
+  }
+
+  function insertStockViewQtyText(valueToInsert: string) {
+    if (stockViewLoading || !stockViewSelectedItem) return
+
+    const isFractional = isStockViewQtyFractional()
+    const current = String(stockViewQty || '')
+    const caret = Math.max(0, Math.min(stockViewQtyCaretIndex, current.length))
+
+    if (!isFractional && valueToInsert === '.') {
+      return
+    }
+
+    if (isFractional && valueToInsert === '.' && current.includes('.')) {
+      return
+    }
+
+    let insertValue = valueToInsert
+
+    if (isFractional && valueToInsert === '.' && current.length === 0) {
+      insertValue = '0.'
+    }
+
+    let next = current.slice(0, caret) + insertValue + current.slice(caret)
+
+    if (current === '0' && valueToInsert !== '.' && caret === 1) {
+      next = valueToInsert
+    }
+
+    next = normalizeStockViewQtyValue(next)
+
+    const nextCaret = Math.max(0, Math.min(caret + insertValue.length, next.length))
+
+    setStockViewQty(next)
+    setStockViewQtyCaretIndex(nextCaret)
+  }
+
+  function appendStockViewQtyDigit(digit: string) {
+    insertStockViewQtyText(digit)
+  }
+
+  function appendStockViewQtyDot() {
+    insertStockViewQtyText('.')
+  }
+
+  function backspaceStockViewQtyDraft() {
+    if (stockViewLoading) return
+
+    const current = String(stockViewQty || '')
+    const caret = Math.max(0, Math.min(stockViewQtyCaretIndex, current.length))
+
+    if (caret <= 0) return
+
+    const next = current.slice(0, caret - 1) + current.slice(caret)
+
+    setStockViewQty(next)
+    setStockViewQtyCaretIndex(caret - 1)
+  }
+
+  function clearStockViewQtyDraft() {
+    if (stockViewLoading) return
+
+    setStockViewQty('')
+    setStockViewQtyCaretIndex(0)
+  }
+
+  function changeStockViewQtyDraft(delta: number) {
+    if (stockViewLoading || !stockViewSelectedItem) return
+
+    const isFractional = isStockViewQtyFractional()
+    const step = isFractional ? 0.1 : 1
+    const current = Number(stockViewQty || 0)
+    const next = Math.max(0, current + delta * step)
+    const nextValue = isFractional ? Number(next.toFixed(3)).toString() : String(Math.trunc(next))
+
+    setStockViewQtyDraft(nextValue === '0' ? '' : nextValue)
+  }
+
+  async function handleStockViewProductAction() {
+    const normalizedQuery = stockViewQuery.trim()
+
+    if (!normalizedQuery) {
+      await openItemPicker('stockView')
+      return
+    }
+
+    if (stockViewItems.length === 1) {
+      selectStockViewItem(stockViewItems[0])
+      return
+    }
+
+    await loadStockViewItems(normalizedQuery)
+  }
+
+  async function refreshStockViewSelectedItem(productId: number) {
+    const items = await searchProductsForSelector(String(productId), { limit: 1, showavailable: true })
+    const refreshedItem = items.find((item) => item.item === productId) || items[0]
+
+    if (refreshedItem) {
+      setStockViewSelectedItem(refreshedItem)
+      setStockViewItems((prev) => {
+        if (!prev.some((item) => item.item === refreshedItem.item)) {
+          return [refreshedItem, ...prev]
+        }
+
+        return prev.map((item) => (item.item === refreshedItem.item ? refreshedItem : item))
+      })
+    }
+
+    return refreshedItem || null
+  }
+
+  function validateStockViewOperation() {
+    if (!stockViewSelectedItem) {
+      return 'Сначала выберите товар'
+    }
+
+    const qty = Number(stockViewQty)
+
+    if (!qty || qty <= 0) {
+      return 'Введите количество'
+    }
+
+    if (stockViewOperation === 'writeoff' && qty > toNumber(stockViewSelectedItem.available_qty, 0)) {
+      return 'Нельзя списать больше доступного количества'
+    }
+
+    return ''
+  }
+
+  function openStockViewConfirm() {
+    const validationError = validateStockViewOperation()
+
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setError('')
+    setStockViewConfirmOpen(true)
+  }
+
+  async function performStockViewOperation() {
+    if (!cashier || !selectedStore || !stockViewSelectedItem) return
+
+    const validationError = validateStockViewOperation()
+
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    const qty = Number(stockViewQty)
+    const operation = stockViewOperation
 
     setStockViewLoading(true)
     setError('')
+    setStockViewMessage('')
 
     try {
       const params = new URLSearchParams({
-        cashier_account: String(currentCashier.cashier_account),
-        store_id: String(currentStore.store_id),
-        limit: '150',
+        product_id: String(stockViewSelectedItem.item),
+        count: String(qty),
+        store_id: String(selectedStore.store_id),
       })
 
-      if (query.trim()) {
-        params.set('q', query.trim())
+      if (stockViewComment.trim()) {
+        params.set('comment', stockViewComment.trim())
       }
 
-      const res = await apiFetch(`${API_BASE}/cashier/items?${params.toString()}`)
+      const action = operation === 'writeoff' ? 'writeoff' : 'post'
+      const res = await apiFetch(`${API_BASE}/cashier/items/goods/${action}?${params.toString()}`, {
+        method: 'POST',
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось загрузить остатки')
+        throw new Error(getErrorMessage(data, operation === 'writeoff' ? 'Не удалось списать товар' : 'Не удалось оприходовать товар'))
       }
 
-      const data = await res.json()
-      setStockViewItems(data.items || [])
+      const itemName = stockViewSelectedItem.item_name
+      const formattedQty = formatQty(qty, stockViewSelectedItem.isfractional)
+      const operationText = operation === 'writeoff' ? 'Списано' : 'Оприходовано'
+
+      setStockViewMessage(`${operationText}: ${itemName} · количество ${formattedQty}`)
+      setStockViewSuccessDialog({
+        itemName,
+        qty: formattedQty,
+        operation,
+      })
+      setStockViewConfirmOpen(false)
+      setStockViewQty('')
+      setStockViewComment('')
+      setStockViewQtyCaretIndex(0)
+
+      await refreshStockViewSelectedItem(stockViewSelectedItem.item)
     } catch (e: any) {
-      setStockViewItems([])
-      setError(e.message || 'Ошибка загрузки остатков')
+      setError(e.message || (operation === 'writeoff' ? 'Ошибка списания товара' : 'Ошибка оприходования товара'))
     } finally {
       setStockViewLoading(false)
     }
   }
 
+  async function loadStockViewItems(query = stockViewQuery) {
+    await loadProductSelectorResults(query, 'stockView')
+  }
+
+
   async function openStockViewDialog() {
     setStockViewDialogOpen(true)
     setStockViewQuery('')
+    resetStockViewWorkState()
     setError('')
     await loadStockViewItems('')
   }
@@ -2610,6 +2850,7 @@ async function openOrder(orderNumber: number) {
     setStockViewDialogOpen(false)
     setStockViewQuery('')
     setStockViewItems([])
+    resetStockViewWorkState()
   }
 
   async function switchStore() {
@@ -2707,7 +2948,7 @@ async function openOrder(orderNumber: number) {
     setItemCategories([])
   }
 
-  async function openItemPicker(mode: 'order' | 'stockReceipt' = 'order') {
+  async function openItemPicker(mode: 'order' | 'stockReceipt' | 'stockView' = 'order') {
     setItemPickerMode(mode)
     setItemPickerOpen(true)
     setItemSearchQuery('')
@@ -2734,6 +2975,12 @@ async function openOrder(orderNumber: number) {
   async function handleProductSelectedFromPicker(item: StoreItem) {
     if (itemPickerMode === 'stockReceipt') {
       selectStockItem(item)
+      setItemPickerOpen(false)
+      return
+    }
+
+    if (itemPickerMode === 'stockView') {
+      selectStockViewItem(item)
       setItemPickerOpen(false)
       return
     }
@@ -4048,7 +4295,7 @@ async function openOrder(orderNumber: number) {
                       <div className="itemNumbers">
                         <b>{formatMoney(item.price)}</b>
                         <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
-                        <span>Добавить</span>
+                        <span>{itemPickerMode === 'order' ? 'Добавить' : 'Выбрать'}</span>
                       </div>
                     </button>
                   ))}
@@ -4411,7 +4658,7 @@ async function openOrder(orderNumber: number) {
                 <div className="itemPicker">
                   <div className="itemPickerHeader">
                     <div>
-                      <h2>{itemPickerMode === 'stockReceipt' ? 'Выбрать товар для прихода' : 'Добавить товар'}</h2>
+                      <h2>{itemPickerMode === 'stockReceipt' ? 'Выбрать товар для прихода' : itemPickerMode === 'stockView' ? 'Выбрать товар для запасов' : 'Добавить товар'}</h2>
                       <p className="muted">Автопоиск по штрихкоду или названию</p>
                     </div>
                     <button className="secondary" onClick={() => setItemPickerOpen(false)}>
@@ -4515,7 +4762,7 @@ async function openOrder(orderNumber: number) {
                           <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
                           <span>Резерв: {formatQty(item.reserve, item.isfractional)}</span>
                           <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
-                          <span>Добавить</span>
+                          <span>{itemPickerMode === 'order' ? 'Добавить' : 'Выбрать'}</span>
                         </div>
                       </button>
                     ))}
@@ -4549,7 +4796,7 @@ async function openOrder(orderNumber: number) {
           </div>
           <div className="topbarActions">
             <button className="secondary" onClick={openStockViewDialog}>
-              Остатки
+              Запасы
             </button>
             <button className="secondary" onClick={openStockReceiptScreen}>
               Приход
@@ -4618,82 +4865,394 @@ async function openOrder(orderNumber: number) {
         )}
 
         {stockViewDialogOpen && (
-          <div className="itemPickerOverlay">
-            <div className="itemPicker">
-              <div className="itemPickerHeader">
+          <div className="itemPickerOverlay stockWorkOverlay">
+            <div className="itemPicker stockWorkScreen">
+              <div className="itemPickerHeader stockWorkHeader">
                 <div>
-                  <h2>Остатки на ТВТ</h2>
-                  <p className="muted">Текущий остаток, резерв и доступное количество товара</p>
+                  <h2>Запасы</h2>
+                  <p className="muted">Поиск товара, оприходование и списание доступного количества</p>
                 </div>
-                <button className="secondary" onClick={() => setStockViewDialogOpen(false)}>
+                <button className="secondary" onClick={() => setStockViewDialogOpen(false)} disabled={stockViewLoading}>
                   Закрыть
                 </button>
               </div>
 
-              <div className="stockViewSearchRow">
-                <input
-                  value={stockViewQuery}
-                  onChange={(e) => setStockViewQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      loadStockViewItems(stockViewQuery)
-                    }
-                  }}
-                  placeholder="Код, название, категория или подкатегория"
-                />
-                <button
-                  className="primary"
-                  onClick={() => loadStockViewItems(stockViewQuery)}
-                  disabled={stockViewLoading}
-                >
-                  {stockViewLoading ? 'Ищем...' : 'Найти'}
-                </button>
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setStockViewQuery('')
-                    loadStockViewItems('')
-                  }}
-                >
-                  Все
-                </button>
-              </div>
-
-              {error && <div className="error">{error}</div>}
-
-              <div className="stockViewTable">
-                <div className="stockViewHeader">
-                  <span>Товар</span>
-                  <span>Цена</span>
-                  <span>Остаток</span>
-                  <span>Резерв</span>
-                  <span>Доступно</span>
-                </div>
-
-                {stockViewItems.length === 0 && (
-                  <div className="emptyBox">Товары не найдены</div>
-                )}
-
-                {stockViewItems.map((item) => (
-                  <div className="stockViewRow" key={item.item}>
-                    <div>
-                      <b>{item.item_name}</b>
-                      <span>
-                        Код {item.item} · {item.item_category || 'Без категории'} · {item.item_subcategory || 'Без подкатегории'}
-                      </span>
+              <div className="stockWorkLayout">
+                <section className="stockWorkSelectorCard">
+                  <div className="productSelectorBlock">
+                    <div className="stockSearchRow productSelectorSearchRow stockWorkSearchRow">
+                      <input
+                        value={stockViewQuery}
+                        onChange={(e) => setStockViewQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void handleStockViewProductAction()
+                          }
+                        }}
+                        placeholder="Код, штрихкод или название товара"
+                      />
+                      <button
+                        className="primary"
+                        onClick={handleStockViewProductAction}
+                        disabled={stockViewLoading}
+                      >
+                        {stockViewLoading ? 'Ищем...' : stockViewQuery.trim() ? 'Показать' : 'Выбрать товар'}
+                      </button>
                     </div>
-                    <div>{formatMoney(item.price)}</div>
-                    <div>{formatQty(item.item_stock, item.isfractional)}</div>
-                    <div>{formatQty(item.reserve, item.isfractional)}</div>
-                    <div>
-                      <b>{formatQty(item.available_qty, item.isfractional)}</b>
+
+                    {stockViewSelectedItem && (
+                      <div className="selectedProductCard stockWorkSelectedProduct">
+                        <div className="itemPhoto">
+                          {stockViewSelectedItem.photo_url ? (
+                            <img src={stockViewSelectedItem.photo_url} alt="" />
+                          ) : (
+                            <span>📦</span>
+                          )}
+                        </div>
+                        <div>
+                          <b>{stockViewSelectedItem.item_name}</b>
+                          <span>Код {stockViewSelectedItem.item} · {getProductKindLabel(stockViewSelectedItem)}</span>
+                          <span>Цена: {formatMoney(stockViewSelectedItem.price)}</span>
+                          <span>
+                            Остаток: {formatQty(stockViewSelectedItem.item_stock, stockViewSelectedItem.isfractional)} · Резерв: {formatQty(stockViewSelectedItem.reserve, stockViewSelectedItem.isfractional)}
+                          </span>
+                          <span>Доступно: {formatQty(stockViewSelectedItem.available_qty, stockViewSelectedItem.isfractional)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary smallButton"
+                          onClick={() => {
+                            setStockViewSelectedItem(null)
+                            setStockViewQty('')
+                            setStockViewComment('')
+                            setStockViewQtyCaretIndex(0)
+                            setStockViewMessage('Выберите новый товар через поиск или кнопку «Выбрать товар»')
+                          }}
+                        >
+                          Сменить товар
+                        </button>
+                      </div>
+                    )}
+
+                    {stockViewItems.length > 0 && (
+                      <div className="stockSearchResults stockWorkSearchResults">
+                        {stockViewItems.map((item) => (
+                          <button
+                            key={item.item}
+                            className={stockViewSelectedItem?.item === item.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                            onClick={() => selectStockViewItem(item)}
+                          >
+                            <div>
+                              <b>{item.item_name}</b>
+                              <span>Код {item.item} · {getProductKindLabel(item)}</span>
+                            </div>
+                            <div>
+                              <b>{formatMoney(item.price)}</b>
+                              <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                              <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {stockViewItems.length === 0 && !stockViewLoading && (
+                      <div className="emptyBox">Введите товар или нажмите «Выбрать товар»</div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="stockWorkOperationCard">
+                  <div>
+                    <h3>Операция</h3>
+                    <div className="stockWorkOperationSwitch">
+                      <button
+                        type="button"
+                        className={stockViewOperation === 'post' ? 'stockWorkOperationButton post active' : 'stockWorkOperationButton post'}
+                        onClick={() => setStockViewOperation('post')}
+                      >
+                        <b>Оприходовать</b>
+                        <span>Остаток увеличится</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={stockViewOperation === 'writeoff' ? 'stockWorkOperationButton writeoff active' : 'stockWorkOperationButton writeoff'}
+                        onClick={() => setStockViewOperation('writeoff')}
+                      >
+                        <b>Списать</b>
+                        <span>Доступное количество уменьшится</span>
+                      </button>
                     </div>
                   </div>
-                ))}
+
+                  <div className="stockField stockQtyBlock">
+                    <label>{stockViewOperation === 'writeoff' ? 'Количество списания' : 'Количество прихода'}</label>
+
+                    {!stockViewSelectedItem ? (
+                      <div className="emptyBox stockQtyHint">
+                        Сначала выберите товар. Для штучного товара доступен ввод только целыми числами, для весового — дробное количество.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="qtyControl stockQtyControl">
+                          <button
+                            type="button"
+                            className="primary qtyBtn"
+                            onClick={() => changeStockViewQtyDraft(-1)}
+                            disabled={stockViewLoading}
+                          >
+                            -
+                          </button>
+
+                          <button
+                            type="button"
+                            className="qtyDisplay"
+                            aria-label="Количество операции"
+                            onClick={() => setStockViewQtyCaretIndex(String(stockViewQty || '').length)}
+                          >
+                            {String(stockViewQty || '0').split('').map((char, index) => (
+                              <span
+                                key={`${char}-${index}`}
+                                className="qtyDigitSlot"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+
+                                  if (!stockViewQty) {
+                                    setStockViewQtyCaretIndex(0)
+                                    return
+                                  }
+
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                                  setStockViewQtyCaretIndex(nextIndex)
+                                }}
+                              >
+                                {stockViewQty && stockViewQtyCaretIndex === index && <span className="qtyCaret" />}
+                                {char}
+                              </span>
+                            ))}
+                            {stockViewQty && stockViewQtyCaretIndex >= String(stockViewQty).length && <span className="qtyCaret" />}
+                            {!stockViewQty && <span className="qtyCaret" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="primary qtyBtn"
+                            onClick={() => changeStockViewQtyDraft(1)}
+                            disabled={stockViewLoading}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <div className="qtyKeypad stockQtyKeypad" aria-label="Цифровая клавиатура запасов">
+                          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                            <button
+                              key={digit}
+                              type="button"
+                              className="qtyKeyBtn"
+                              onClick={() => appendStockViewQtyDigit(digit)}
+                              disabled={stockViewLoading}
+                            >
+                              {digit}
+                            </button>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="qtyKeyBtn secondary"
+                            onClick={backspaceStockViewQtyDraft}
+                            disabled={stockViewLoading}
+                          >
+                            ←
+                          </button>
+
+                          <button
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={() => appendStockViewQtyDigit('0')}
+                            disabled={stockViewLoading}
+                          >
+                            0
+                          </button>
+
+                          {stockViewSelectedItem.isfractional ? (
+                            <button
+                              type="button"
+                              className="qtyKeyBtn"
+                              onClick={appendStockViewQtyDot}
+                              disabled={stockViewLoading}
+                            >
+                              .
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="qtyKeyBtn secondary"
+                              onClick={clearStockViewQtyDraft}
+                              disabled={stockViewLoading}
+                            >
+                              C
+                            </button>
+                          )}
+                        </div>
+
+                        <p className="muted stockQtyKindHint">
+                          {stockViewSelectedItem.isfractional
+                            ? `Весовой товар: можно вводить дробное количество, ${stockViewSelectedItem.unit || stockViewSelectedItem.pack || 'кг'}`
+                            : 'Штучный товар: ввод только целыми числами'}
+                        </p>
+
+                        {stockViewOperation === 'writeoff' && (
+                          <p className="muted stockQtyHint">
+                            Доступно для списания: {formatQty(stockViewSelectedItem.available_qty, stockViewSelectedItem.isfractional)}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <label>Комментарий</label>
+                  <input
+                    value={stockViewComment}
+                    onChange={(e) => setStockViewComment(e.target.value)}
+                    placeholder="Комментарий к операции"
+                  />
+
+                  {stockViewMessage && <div className="notice">{stockViewMessage}</div>}
+                  {error && <div className="error">{error}</div>}
+
+                  <div className="stockWorkActions">
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setStockViewQty('')
+                        setStockViewComment('')
+                        setStockViewQtyCaretIndex(0)
+                        setStockViewMessage('')
+                      }}
+                      disabled={stockViewLoading}
+                    >
+                      Очистить
+                    </button>
+                    <button
+                      className={stockViewOperation === 'writeoff' ? 'danger' : 'primary'}
+                      onClick={openStockViewConfirm}
+                      disabled={stockViewLoading || !stockViewSelectedItem}
+                    >
+                      {stockViewLoading
+                        ? 'Выполняем...'
+                        : stockViewOperation === 'writeoff'
+                          ? 'Списать'
+                          : 'Оприходовать'}
+                    </button>
+                  </div>
+                </section>
               </div>
             </div>
           </div>
         )}
+
+
+        {stockViewConfirmOpen && stockViewSelectedItem && (
+          <div className="qtyOverlay">
+            <div className="confirmDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>{stockViewOperation === 'writeoff' ? 'Подтвердить списание?' : 'Подтвердить оприходование?'}</h2>
+                  <p className="muted">{stockViewSelectedItem.item_name}</p>
+                </div>
+                <button className="secondary" onClick={() => setStockViewConfirmOpen(false)} disabled={stockViewLoading}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="confirmDialogBody">
+                <div className="confirmDialogSummary">
+                  <span>Количество</span>
+                  <b>{formatQty(Number(stockViewQty || 0), stockViewSelectedItem.isfractional)}</b>
+                </div>
+                <div className="confirmDialogSummary">
+                  <span>Текущий остаток</span>
+                  <b>{formatQty(stockViewSelectedItem.item_stock, stockViewSelectedItem.isfractional)}</b>
+                </div>
+                {stockViewOperation === 'writeoff' && (
+                  <div className="confirmDialogSummary">
+                    <span>Доступно</span>
+                    <b>{formatQty(stockViewSelectedItem.available_qty, stockViewSelectedItem.isfractional)}</b>
+                  </div>
+                )}
+                <p className="muted">
+                  {stockViewOperation === 'writeoff'
+                    ? 'После подтверждения доступный остаток товара уменьшится.'
+                    : 'После подтверждения остаток товара увеличится.'}
+                </p>
+              </div>
+
+              <div className="confirmDialogActions">
+                <button className="secondary" onClick={() => setStockViewConfirmOpen(false)} disabled={stockViewLoading}>
+                  Отмена
+                </button>
+                <button
+                  className={stockViewOperation === 'writeoff' ? 'danger' : 'primary'}
+                  onClick={performStockViewOperation}
+                  disabled={stockViewLoading}
+                >
+                  {stockViewLoading
+                    ? 'Выполняем...'
+                    : stockViewOperation === 'writeoff'
+                      ? 'Списать'
+                      : 'Оприходовать'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {stockViewSuccessDialog && (
+          <div className="qtyOverlay">
+            <div className="cashTopupConfirmDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Операция выполнена</h2>
+                  <p className="muted">
+                    {stockViewSuccessDialog.operation === 'writeoff' ? 'Списание товара' : 'Оприходование товара'}
+                  </p>
+                </div>
+                <button className="secondary" onClick={() => setStockViewSuccessDialog(null)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                <div className="cashTopupConfirmRow">
+                  <span>Товар</span>
+                  <b>{stockViewSuccessDialog.itemName}</b>
+                </div>
+                <div className="cashTopupConfirmAmount">
+                  <span>Количество</span>
+                  <b>{stockViewSuccessDialog.qty}</b>
+                </div>
+                <div className="cashTopupConfirmActions">
+                  <button className="secondary" onClick={() => setStockViewSuccessDialog(null)}>
+                    Новая операция
+                  </button>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setStockViewSuccessDialog(null)
+                      setStockViewDialogOpen(false)
+                    }}
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {stockDialogOpen && (
           <div className="qtyOverlay stockOverlay">

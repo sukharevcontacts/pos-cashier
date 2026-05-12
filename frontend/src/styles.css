@@ -3320,3 +3320,188 @@ body[data-screen-profile="tablet_10"] .stockReceiptActions {
     text-align: left;
   }
 }
+
+/* Экран Запасы: операции оприходования и списания */
+.stockWorkOverlay {
+  align-items: stretch;
+  padding: 18px;
+}
+
+.stockWorkScreen {
+  width: min(1280px, 100%);
+  gap: 16px;
+}
+
+.stockWorkHeader {
+  flex: 0 0 auto;
+}
+
+.stockWorkLayout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(420px, 1.25fr) minmax(380px, 0.85fr);
+  gap: 16px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.stockWorkSelectorCard,
+.stockWorkOperationCard {
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid #e1e1e1;
+  border-radius: 14px;
+  background: #fafafa;
+  overflow-y: auto;
+}
+
+.stockWorkOperationCard {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.stockWorkSearchRow {
+  grid-template-columns: minmax(220px, 1fr) 170px;
+}
+
+.stockWorkSelectedProduct {
+  margin-top: 4px;
+}
+
+.stockWorkSearchResults {
+  max-height: calc(100dvh - 420px);
+}
+
+.stockWorkOperationCard h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.stockWorkOperationSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stockWorkOperationButton {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  text-align: left;
+  border: 2px solid #d8d8d8;
+  background: #f6f6f6;
+  color: #222;
+}
+
+.stockWorkOperationButton b,
+.stockWorkOperationButton span {
+  display: block;
+}
+
+.stockWorkOperationButton b {
+  font-size: 17px;
+}
+
+.stockWorkOperationButton span {
+  color: #666;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.stockWorkOperationButton.post.active {
+  border-color: #2d7d32;
+  background: #e8f5e9;
+  color: #14532d;
+}
+
+.stockWorkOperationButton.post.active span {
+  color: #2d6a45;
+}
+
+.stockWorkOperationButton.writeoff.active {
+  border-color: #b71c1c;
+  background: #ffebee;
+  color: #7f1d1d;
+}
+
+.stockWorkOperationButton.writeoff.active span {
+  color: #991b1b;
+}
+
+.stockWorkActions {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOverlay {
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkScreen {
+  width: 100%;
+  border-radius: 12px;
+  padding: 12px;
+  gap: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkHeader {
+  padding-bottom: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkHeader h2 {
+  font-size: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkHeader .muted {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkLayout {
+  grid-template-columns: minmax(330px, 1.15fr) minmax(300px, 0.85fr);
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkSelectorCard,
+body[data-screen-profile="tablet_10"] .stockWorkOperationCard {
+  padding: 10px;
+  border-radius: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkSearchRow {
+  grid-template-columns: minmax(170px, 1fr) 128px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkSearchResults {
+  max-height: none;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationSwitch {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationButton {
+  padding: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationButton b {
+  font-size: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationButton span {
+  font-size: 11px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkActions {
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .stockWorkLayout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+}
