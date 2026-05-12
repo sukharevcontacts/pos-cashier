@@ -756,7 +756,6 @@ function App() {
   const [stockViewComment, setStockViewComment] = useState('')
   const [stockViewQtyCaretIndex, setStockViewQtyCaretIndex] = useState(0)
   const [stockViewMessage, setStockViewMessage] = useState('')
-  const [stockViewConfirmOpen, setStockViewConfirmOpen] = useState(false)
   const [stockViewSuccessDialog, setStockViewSuccessDialog] = useState<{ itemName: string; qty: string; operation: 'post' | 'writeoff' } | null>(null)
 
 
@@ -1964,7 +1963,7 @@ function App() {
 
     try {
       const limit = target === 'picker' ? 100 : target === 'stockView' ? 150 : 30
-      const showavailable = target === 'stockReceipt' ? false : true
+      const showavailable = target === 'picker' ? true : false
       const items = await searchProductsForSelector(query, { limit, showavailable })
       setItems(items)
     } catch (e: any) {
@@ -1997,7 +1996,6 @@ function App() {
     setStockViewComment('')
     setStockViewQtyCaretIndex(0)
     setStockViewMessage('')
-    setStockViewConfirmOpen(false)
     setStockViewSuccessDialog(null)
     setStockViewItems([])
   }
@@ -2123,16 +2121,11 @@ function App() {
       return
     }
 
-    if (stockViewItems.length === 1) {
-      selectStockViewItem(stockViewItems[0])
-      return
-    }
-
-    await loadStockViewItems(normalizedQuery)
+    await searchStockViewItemsFresh(normalizedQuery, { selectSingle: true })
   }
 
   async function refreshStockViewSelectedItem(productId: number) {
-    const items = await searchProductsForSelector(String(productId), { limit: 1, showavailable: true })
+    const items = await searchProductsForSelector(String(productId), { limit: 1, showavailable: false })
     const refreshedItem = items.find((item) => item.item === productId) || items[0]
 
     if (refreshedItem) {
@@ -2165,18 +2158,6 @@ function App() {
     }
 
     return ''
-  }
-
-  function openStockViewConfirm() {
-    const validationError = validateStockViewOperation()
-
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-
-    setError('')
-    setStockViewConfirmOpen(true)
   }
 
   async function performStockViewOperation() {
@@ -2227,8 +2208,7 @@ function App() {
         qty: formattedQty,
         operation,
       })
-      setStockViewConfirmOpen(false)
-      setStockViewQty('')
+        setStockViewQty('')
       setStockViewComment('')
       setStockViewQtyCaretIndex(0)
 
@@ -2240,8 +2220,35 @@ function App() {
     }
   }
 
+  async function searchStockViewItemsFresh(
+    query = stockViewQuery,
+    options: { selectSingle?: boolean } = {}
+  ) {
+    const normalizedQuery = query.trim()
+
+    setStockViewLoading(true)
+    setError('')
+
+    try {
+      const items = await searchProductsForSelector(normalizedQuery, { limit: 150, showavailable: false })
+      setStockViewItems(items)
+
+      if (options.selectSingle && items.length === 1) {
+        selectStockViewItem(items[0])
+      }
+
+      return items
+    } catch (e: any) {
+      setStockViewItems([])
+      setError(e.message || 'Ошибка поиска товара')
+      return []
+    } finally {
+      setStockViewLoading(false)
+    }
+  }
+
   async function loadStockViewItems(query = stockViewQuery) {
-    await loadProductSelectorResults(query, 'stockView')
+    return searchStockViewItemsFresh(query)
   }
 
 
@@ -3123,6 +3130,32 @@ async function openOrder(orderNumber: number) {
       window.clearTimeout(timer)
     }
   }, [stockDialogOpen, stockSearchQuery, selectedStore?.store_id])
+
+  useEffect(() => {
+    if (!stockViewDialogOpen) {
+      return
+    }
+
+    const normalizedQuery = stockViewQuery.trim()
+
+    if (!normalizedQuery) {
+      setStockViewItems([])
+      return
+    }
+
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setStockViewItems([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void searchStockViewItemsFresh(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [stockViewDialogOpen, stockViewQuery, selectedStore?.store_id])
 
   async function addQuickItemToCurrentOrder(item: StoreItem) {
     await addItemToCurrentOrder(item, { keepSearchOpen: false })
@@ -4923,6 +4956,8 @@ async function openOrder(orderNumber: number) {
                           className="secondary smallButton"
                           onClick={() => {
                             setStockViewSelectedItem(null)
+                            setStockViewQuery('')
+                            setStockViewItems([])
                             setStockViewQty('')
                             setStockViewComment('')
                             setStockViewQtyCaretIndex(0)
@@ -5138,7 +5173,7 @@ async function openOrder(orderNumber: number) {
                     </button>
                     <button
                       className={stockViewOperation === 'writeoff' ? 'danger' : 'primary'}
-                      onClick={openStockViewConfirm}
+                      onClick={performStockViewOperation}
                       disabled={stockViewLoading || !stockViewSelectedItem}
                     >
                       {stockViewLoading
@@ -5155,60 +5190,6 @@ async function openOrder(orderNumber: number) {
         )}
 
 
-        {stockViewConfirmOpen && stockViewSelectedItem && (
-          <div className="qtyOverlay">
-            <div className="confirmDialog" role="dialog" aria-modal="true">
-              <div className="qtyDialogHeader">
-                <div>
-                  <h2>{stockViewOperation === 'writeoff' ? 'Подтвердить списание?' : 'Подтвердить оприходование?'}</h2>
-                  <p className="muted">{stockViewSelectedItem.item_name}</p>
-                </div>
-                <button className="secondary" onClick={() => setStockViewConfirmOpen(false)} disabled={stockViewLoading}>
-                  Закрыть
-                </button>
-              </div>
-
-              <div className="confirmDialogBody">
-                <div className="confirmDialogSummary">
-                  <span>Количество</span>
-                  <b>{formatQty(Number(stockViewQty || 0), stockViewSelectedItem.isfractional)}</b>
-                </div>
-                <div className="confirmDialogSummary">
-                  <span>Текущий остаток</span>
-                  <b>{formatQty(stockViewSelectedItem.item_stock, stockViewSelectedItem.isfractional)}</b>
-                </div>
-                {stockViewOperation === 'writeoff' && (
-                  <div className="confirmDialogSummary">
-                    <span>Доступно</span>
-                    <b>{formatQty(stockViewSelectedItem.available_qty, stockViewSelectedItem.isfractional)}</b>
-                  </div>
-                )}
-                <p className="muted">
-                  {stockViewOperation === 'writeoff'
-                    ? 'После подтверждения доступный остаток товара уменьшится.'
-                    : 'После подтверждения остаток товара увеличится.'}
-                </p>
-              </div>
-
-              <div className="confirmDialogActions">
-                <button className="secondary" onClick={() => setStockViewConfirmOpen(false)} disabled={stockViewLoading}>
-                  Отмена
-                </button>
-                <button
-                  className={stockViewOperation === 'writeoff' ? 'danger' : 'primary'}
-                  onClick={performStockViewOperation}
-                  disabled={stockViewLoading}
-                >
-                  {stockViewLoading
-                    ? 'Выполняем...'
-                    : stockViewOperation === 'writeoff'
-                      ? 'Списать'
-                      : 'Оприходовать'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {stockViewSuccessDialog && (
           <div className="qtyOverlay">
