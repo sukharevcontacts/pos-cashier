@@ -1741,6 +1741,41 @@ function App() {
     }, 0)
   }
 
+  function openStockReceiptScreen() {
+    setStockDialogOpen(true)
+    setStockMessage('')
+    setError('')
+    setStockSearchQuery('')
+    setStockSearchItems([])
+    window.setTimeout(() => {
+      stockSearchInputRef.current?.focus()
+    }, 0)
+  }
+
+  function closeStockReceiptScreen() {
+    setStockDialogOpen(false)
+    setStockMessage('')
+    setError('')
+  }
+
+  async function handleStockProductAction() {
+    const normalizedQuery = stockSearchQuery.trim()
+
+    if (!normalizedQuery) {
+      await openItemPicker('stockReceipt')
+      return
+    }
+
+    if (stockSearchItems.length === 1) {
+      selectStockItem(stockSearchItems[0])
+      return
+    }
+
+    if (stockSearchItems.length === 0) {
+      await loadStockSearchItems(normalizedQuery)
+    }
+  }
+
   async function searchProductsForSelector(query: string, options: { limit?: number } = {}) {
     if (!cashier || !selectedStore) return []
 
@@ -3369,6 +3404,276 @@ async function openOrder(orderNumber: number) {
   }
 
 
+  if (selectedStore && cashier && stockDialogOpen) {
+    const stockActionButtonLabel = stockSearchQuery.trim()
+      ? (stockSearchLoading ? 'Ищем...' : 'Показать')
+      : 'Выбрать товар'
+
+    return (
+      <div className="app">
+        <header className="topbar orderTopbar" onPointerUp={handleTopbarPointerUp}>
+          <div className="topbarLeft">
+            <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
+              ☰
+            </button>
+            <div>
+              <div className="title">Приход товара</div>
+              <div className="subtitle">
+                Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+              </div>
+            </div>
+          </div>
+          <button className="secondary" onClick={closeStockReceiptScreen} disabled={stockLoading}>
+            Назад
+          </button>
+        </header>
+
+        {renderSideMenu()}
+
+        <main className="stockReceiptScreen">
+          <section className="stockReceiptMain">
+            <div className="stockReceiptTop">
+              <div>
+                <h2>Оприходование товара</h2>
+                <p className="muted">Найдите товар по ID, штрихкоду или названию, укажите количество и комментарий.</p>
+              </div>
+              <div className="stockReceiptStatus">
+                <span>Точка выдачи</span>
+                <b>{selectedStore.store_name}</b>
+              </div>
+            </div>
+
+            <div className="stockReceiptLayout">
+              <section className="stockReceiptSelectorCard">
+                <div className="stockSearchBlock productSelectorBlock">
+                  <label>Товар</label>
+                  <div className="stockSearchRow productSelectorSearchRow stockReceiptSearchRow">
+                    <input
+                      ref={stockSearchInputRef}
+                      value={stockSearchQuery}
+                      onChange={(e) => setStockSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void handleStockProductAction()
+                        }
+                      }}
+                      placeholder="ID, штрихкод или название товара"
+                      autoComplete="off"
+                    />
+                    <button
+                      className="primary"
+                      onClick={handleStockProductAction}
+                      disabled={stockSearchLoading}
+                    >
+                      {stockActionButtonLabel}
+                    </button>
+                  </div>
+
+                  {stockSelectedItem && (
+                    <div className="selectedProductCard stockReceiptSelectedProduct">
+                      <div className="itemPhoto">
+                        {stockSelectedItem.photo_url ? (
+                          <img src={stockSelectedItem.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+                      <div>
+                        <b>{stockSelectedItem.item_name}</b>
+                        <span>Код {stockSelectedItem.item} · {getProductKindLabel(stockSelectedItem)}</span>
+                        <span>
+                          Остаток: {formatQty(stockSelectedItem.item_stock, stockSelectedItem.isfractional)} · Доступно: {formatQty(stockSelectedItem.available_qty, stockSelectedItem.isfractional)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary smallButton"
+                        onClick={changeStockSelectedItem}
+                        disabled={stockLoading}
+                      >
+                        Сменить товар
+                      </button>
+                    </div>
+                  )}
+
+                  {stockSearchQuery.trim() && stockSearchItems.length > 0 && (
+                    <div className="stockSearchResults stockReceiptSearchResults">
+                      {stockSearchItems.map((item) => (
+                        <button
+                          key={item.item}
+                          className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                          onClick={() => selectStockItem(item)}
+                          type="button"
+                        >
+                          <div>
+                            <b>{item.item_name}</b>
+                            <span>Код {item.item} · {getProductKindLabel(item)}</span>
+                          </div>
+                          <div>
+                            <b>{formatMoney(item.price)}</b>
+                            <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {stockSearchQuery.trim() && !stockSearchLoading && stockSearchItems.length === 0 && !stockSelectedItem && (
+                    <div className="emptyBox">Введите запрос или нажмите «Выбрать товар» для выбора из классификатора.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="stockReceiptOperationCard">
+                <div className="stockField stockQtyBlock">
+                  <label>Количество прихода</label>
+
+                  {!stockSelectedItem ? (
+                    <div className="emptyBox stockQtyHint">
+                      Сначала выберите товар. После выбора откроется клавиатура количества: для штучного товара без точки, для весового — с десятичной точкой.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="qtyControl stockQtyControl">
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(-1)}
+                          disabled={stockLoading}
+                        >
+                          -
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyDisplay"
+                          aria-label="Количество прихода"
+                          onClick={() => setStockQtyCaretIndex(String(stockForm.qty_delta || '').length)}
+                        >
+                          {String(stockForm.qty_delta || '0').split('').map((char, index) => (
+                            <span
+                              key={`${char}-${index}`}
+                              className="qtyDigitSlot"
+                              onClick={(e) => {
+                                e.stopPropagation()
+
+                                if (!stockForm.qty_delta) {
+                                  setStockQtyCaretIndex(0)
+                                  return
+                                }
+
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                                setStockQtyCaretIndex(nextIndex)
+                              }}
+                            >
+                              {stockForm.qty_delta && stockQtyCaretIndex === index && <span className="qtyCaret" />}
+                              {char}
+                            </span>
+                          ))}
+                          {stockForm.qty_delta && stockQtyCaretIndex >= String(stockForm.qty_delta).length && <span className="qtyCaret" />}
+                          {!stockForm.qty_delta && <span className="qtyCaret" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(1)}
+                          disabled={stockLoading}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <div className="qtyKeypad stockQtyKeypad" aria-label="Цифровая клавиатура прихода">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                          <button
+                            key={digit}
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={() => appendStockQtyDigit(digit)}
+                            disabled={stockLoading}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn secondary"
+                          onClick={backspaceStockQtyDraft}
+                          disabled={stockLoading}
+                        >
+                          ←
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn"
+                          onClick={() => appendStockQtyDigit('0')}
+                          disabled={stockLoading}
+                        >
+                          0
+                        </button>
+
+                        {stockSelectedItem.isfractional ? (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={appendStockQtyDot}
+                            disabled={stockLoading}
+                          >
+                            .
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn secondary"
+                            onClick={clearStockQtyDraft}
+                            disabled={stockLoading}
+                          >
+                            C
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="muted stockQtyKindHint">
+                        {stockSelectedItem.isfractional
+                          ? `Весовой товар: можно вводить дробное количество, ${stockSelectedItem.unit || stockSelectedItem.pack || 'кг'}`
+                          : 'Штучный товар: ввод только целыми числами'}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <label>Комментарий</label>
+                <input
+                  value={stockForm.comment}
+                  onChange={(e) => updateStockField('comment', e.target.value)}
+                  placeholder="Комментарий к приходу"
+                />
+
+                {stockMessage && <div className="notice">{stockMessage}</div>}
+                {error && <div className="error">{error}</div>}
+
+                <div className="stockReceiptActions">
+                  <button className="secondary" onClick={closeStockReceiptScreen} disabled={stockLoading}>
+                    Назад
+                  </button>
+                  <button className="primary" onClick={stockReceipt} disabled={stockLoading || !stockForm.item}>
+                    {stockLoading ? 'Оприходуем...' : 'Оприходовать'}
+                  </button>
+                </div>
+              </section>
+            </div>
+          </section>
+        </main>
+      </div>
+    )
+  }
+
   if (selectedStore && cashier && orderDetails) {
     const order = orderDetails.order
     const fio = `${order.user_fam ?? ''} ${order.user_name ?? ''} ${order.user_otch ?? ''}`.trim()
@@ -4074,15 +4379,7 @@ async function openOrder(orderNumber: number) {
             <button className="secondary" onClick={openStockViewDialog}>
               Остатки
             </button>
-            <button
-              className="secondary"
-              onClick={() => {
-                setStockDialogOpen(true)
-                setStockMessage('')
-                setError('')
-                loadStockSearchItems('')
-              }}
-            >
+            <button className="secondary" onClick={openStockReceiptScreen}>
               Приход
             </button>
             <button className="secondary" onClick={() => setNewUserDialogOpen(true)}>
