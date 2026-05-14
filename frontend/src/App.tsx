@@ -642,7 +642,7 @@ function mapParitetOrderToFrontResponse(data: any, foundUser: FoundUser, selecte
       user_name: foundUser.user_name,
       user_fam: foundUser.user_fam,
       user_otch: foundUser.user_otch,
-      user_balance: foundUser.balance,
+      user_balance: toNumber(foundUser.balance, 0),
       user_photo_url: foundUser.photo_url,
     },
     store: data?.store || {
@@ -672,7 +672,7 @@ function createLocalNewOrderDetails(foundUser: FoundUser, selectedStore: Store):
       user_name: foundUser.user_name,
       user_fam: foundUser.user_fam,
       user_otch: foundUser.user_otch,
-      user_balance: foundUser.balance,
+      user_balance: toNumber(foundUser.balance, 0),
       user_photo_url: foundUser.photo_url,
     },
     store: {
@@ -1554,40 +1554,67 @@ function App() {
     return data
   }
 
-  function applySearchResponse(data: SearchResponse, keepSelectedOrderNumber?: number | null) {
-    setFoundUser(data.user)
+  function applySearchResponse(
+    data: SearchResponse,
+    keepSelectedOrderNumber?: number | null,
+    options: { preserveUserBalance?: number | null } = {}
+  ) {
+    const nextUser =
+      options.preserveUserBalance !== undefined && options.preserveUserBalance !== null
+        ? {
+            ...data.user,
+            balance: options.preserveUserBalance,
+          }
+        : data.user
+
+    setFoundUser(nextUser)
     setOrders(data.orders)
     setStoreState(data.store)
 
     if (keepSelectedOrderNumber !== undefined) {
       if (keepSelectedOrderNumber) {
-        const exists = data.orders.some((o) => o.order_number === keepSelectedOrderNumber)
+        const exists = data.orders.some((o) => Number(o.order_number) === Number(keepSelectedOrderNumber))
         setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
       } else {
         setSelectedOrderNumber(null)
       }
     }
+
+    return {
+      ...data,
+      user: nextUser,
+    }
   }
 
   async function refreshCurrentUser(
     keepSelectedOrderNumber?: number | null,
-    options: { updateCashierStatus?: boolean } = {}
+    options: { updateCashierStatus?: boolean; preserveUserBalance?: number | null } = {}
   ) {
     if (!cashier || !selectedStore || !foundUser) return
 
     try {
       const data = await fetchCurrentShareholderData(foundUser.user_account)
-      applySearchResponse(data, keepSelectedOrderNumber)
+      const appliedData = applySearchResponse(data, keepSelectedOrderNumber, {
+        preserveUserBalance: options.preserveUserBalance,
+      })
 
       if (options.updateCashierStatus !== false) {
         await fetchStatus()
       }
 
-      return data
+      return appliedData
     } catch (e: any) {
       setError(e.message || 'Ошибка обновления данных пайщика')
       return null
     }
+  }
+
+  function getVisibleOrderUserBalance(order: OrderDetailsResponse['order']) {
+    if (foundUser && String(foundUser.user_account) === String(order.user_account)) {
+      return Number(foundUser.balance || 0)
+    }
+
+    return Number(order.user_balance || 0)
   }
 
   async function refreshOrderUserBalance() {
@@ -1667,7 +1694,7 @@ function App() {
     setStoreState(data.store)
 
     if (keepSelectedOrderNumber) {
-      const exists = data.orders.some((o) => o.order_number === keepSelectedOrderNumber)
+      const exists = data.orders.some((o) => Number(o.order_number) === Number(keepSelectedOrderNumber))
       setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
     }
   }
@@ -2906,6 +2933,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
       return
     }
 
+    const balanceBeforeSave = toNumber(orderDetails.order.user_balance ?? foundUser.balance, 0)
+
     setSaveLoading(true)
     setError('')
 
@@ -2942,22 +2971,19 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
       }
 
       setSelectedOrderNumber(savedOrderNumber)
-      setOrderDetails(mapParitetOrderToFrontResponse(saved, foundUser, selectedStore))
 
-      const refreshed = await refreshCurrentUser(savedOrderNumber)
-      const freshUser = refreshed?.user || foundUser
-
-      setOrderDetails((prev) =>
-        prev
-          ? {
-              ...prev,
-              order: {
-                ...prev.order,
-                user_balance: Number(freshUser.balance || 0),
-              },
-            }
-          : prev
-      )
+      const refreshed = await refreshCurrentUser(savedOrderNumber, {
+        preserveUserBalance: balanceBeforeSave,
+      })
+      const freshUser = refreshed?.user
+        ? {
+            ...refreshed.user,
+            balance: balanceBeforeSave,
+          }
+        : {
+            ...foundUser,
+            balance: balanceBeforeSave,
+          }
 
       await openOrder(savedOrderNumber, freshUser)
     } catch (e: any) {
@@ -4208,7 +4234,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   title="Дважды нажмите, чтобы обновить баланс"
                 >
                   <span>{orderBalanceRefreshLoading ? 'Обновление...' : 'Баланс пайщика'}</span>
-                  <b>{formatMoney(order.user_balance)}</b>
+                  <b>{formatMoney(getVisibleOrderUserBalance(order))}</b>
                 </div>
                 <div>
                   <span>П/С владельца ТВТ</span>
