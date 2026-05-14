@@ -42,12 +42,15 @@ async def transfer_cash_route(
 
         return {
             "ok": True,
+            "customerbalance": payload.get("customerbalance"),
+            "cashierbalance": payload.get("cashierbalance"),
+            "moneyincashbox": payload.get("moneyincashbox"),
             "payload": payload,
         }
 
     except Exception as e:
         logger.exception("Ошибка приема наличных")
-        raise HTTPException(400, str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # =========================
@@ -74,12 +77,16 @@ async def cashout_check_route(
 
         return {
             "ok": True,
+            "customerbalance": payload.get("customerbalance"),
+            "cashierbalance": payload.get("cashierbalance"),
+            "moneyincashbox": payload.get("moneyincashbox"),
+            "amountwithcomission": payload.get("amountwithcomission"),
             "payload": payload,
         }
 
     except Exception as e:
         logger.exception("Ошибка проверки выдачи")
-        raise HTTPException(400, str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # =========================
@@ -108,12 +115,16 @@ async def cashout_execute_route(
 
         return {
             "ok": True,
+            "customerbalance": payload.get("customerbalance"),
+            "cashierbalance": payload.get("cashierbalance"),
+            "moneyincashbox": payload.get("moneyincashbox"),
+            "amountwithcomission": payload.get("amountwithcomission"),
             "payload": payload,
         }
 
     except Exception as e:
         logger.exception("Ошибка выдачи наличных")
-        raise HTTPException(400, str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # =========================
@@ -149,4 +160,4 @@ async def replenish_qr_route(
 
     except Exception as e:
         logger.exception("Ошибка генерации QR")
-        raise HTTPException(400, str(e))
+        raise HTTPException(status_code=400, detail=str(e))
