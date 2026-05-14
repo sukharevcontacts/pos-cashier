@@ -3265,18 +3265,19 @@ body[data-screen-profile="tablet_10"] .stockQtyHint {
 }
 
 body[data-screen-profile="tablet_10"] .stockReceiptScreen {
-  height: calc(100dvh - 50px);
-  max-height: calc(100dvh - 50px);
-  min-height: 0;
-  overflow: hidden;
+  height: auto;
+  min-height: calc(100vh - 50px);
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 8px;
 }
 
 body[data-screen-profile="tablet_10"] .stockReceiptMain {
-  height: 100%;
-  max-height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  height: auto;
+  min-height: calc(100vh - 66px);
+  max-height: none;
+  overflow: visible;
   padding: 10px;
   border-radius: 10px;
   gap: 10px;
@@ -3304,18 +3305,19 @@ body[data-screen-profile="tablet_10"] .stockReceiptStatus b {
 }
 
 body[data-screen-profile="tablet_10"] .stockReceiptLayout {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   grid-template-columns: minmax(340px, 1.15fr) minmax(300px, 0.85fr);
   gap: 8px;
 }
 
 body[data-screen-profile="tablet_10"] .stockReceiptSelectorCard,
 body[data-screen-profile="tablet_10"] .stockReceiptOperationCard {
-  height: 100%;
+  height: auto;
   min-height: 0;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   padding: 10px;
   border-radius: 10px;
 }
@@ -3622,3 +3624,65 @@ body[data-screen-profile="tablet_10"] .stockWorkActions {
     min-height: 56px;
   }
 }
+
+/* FIX tablet_10 order lines visibility on real tablets */
+body[data-screen-profile="tablet_10"] .orderScreen {
+  height: auto;
+  min-height: calc(100vh - 50px);
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain {
+  height: auto;
+  min-height: calc(100vh - 66px);
+  max-height: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-screen-profile="tablet_10"] .orderTop,
+body[data-screen-profile="tablet_10"] .error,
+body[data-screen-profile="tablet_10"] .notice,
+body[data-screen-profile="tablet_10"] .emptyOrder,
+body[data-screen-profile="tablet_10"] .quickAddRow,
+body[data-screen-profile="tablet_10"] .orderActions {
+  flex: 0 0 auto;
+}
+
+body[data-screen-profile="tablet_10"] .linesTable {
+  flex: 0 1 auto;
+  min-height: 140px;
+  max-height: calc(100vh - 330px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .lineHeader {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+}
+
+body[data-screen-profile="tablet_10"] .lineRow {
+  flex: none;
+  height: auto;
+  min-height: 72px;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+body[data-screen-profile="tablet_10"] .lineRow.weightLineRow {
+  min-height: 72px;
+}
+

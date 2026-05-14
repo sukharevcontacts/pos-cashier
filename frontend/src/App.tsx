@@ -1094,11 +1094,12 @@ function App() {
   }
 
   function shouldUseTouchKeypad() {
-    return (
-      screenProfile === 'tablet_10' &&
-      typeof window !== 'undefined' &&
-      window.matchMedia('(pointer: coarse)').matches
-    )
+    if (typeof window === 'undefined') return false
+
+    const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches
+    const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
+
+    return hasCoarsePointer || hasTouchPoints
   }
 
   function normalizeSearchValue(value: string) {
@@ -4633,9 +4634,14 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               </div>
             </div>
           </div>
-          <button className="secondary" onClick={closeOrderScreen}>
-            Назад к пайщику
-          </button>
+          <div className="topbarActions">
+            <button className="secondary" onClick={openStockReceiptScreen}>
+              Приход
+            </button>
+            <button className="secondary" onClick={closeOrderScreen}>
+              Назад к пайщику
+            </button>
+          </div>
         </header>
 
         {renderSideMenu()}
