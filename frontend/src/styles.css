@@ -35,6 +35,11 @@ input {
   box-shadow: 0 10px 35px rgba(0, 0, 0, 0.12);
 }
 
+.panel h1 {
+  color: #111;
+  font-weight: 800;
+}
+
 .panel.wide {
   max-width: 760px;
 }
@@ -112,6 +117,7 @@ button:disabled {
   text-align: left;
   background: #f5f5f5;
   border: 1px solid #ddd;
+  color: #1f1f1f;
 }
 
 .storeButton:hover {
@@ -121,6 +127,8 @@ button:disabled {
 .storeName {
   display: block;
   font-size: 22px;
+  font-weight: 800;
+  color: #111;
   margin-bottom: 4px;
 }
 
@@ -1042,6 +1050,35 @@ button:disabled {
   line-height: 1;
 }
 
+.sideMenuTabs {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0 6px;
+}
+
+.sideMenuTabButton {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #d8d8d8;
+  background: #f6f6f6;
+  color: #222;
+  text-align: left;
+}
+
+.sideMenuTabButton.active {
+  border-color: #2d7d32;
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.sideMenuTabButton:hover {
+  background: #eeeeee;
+}
+
+.sideMenuTabButton.active:hover {
+  background: #e8f5e9;
+}
+
 .sideMenuSection {
   display: grid;
   gap: 10px;
@@ -1073,6 +1110,25 @@ button:disabled {
   margin: 0;
   color: #666;
   font-size: 14px;
+  line-height: 1.35;
+}
+
+.sideMenuEmptyState {
+  padding: 16px;
+  border: 1px dashed #cfcfcf;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.sideMenuEmptyState b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.sideMenuEmptyState p {
+  margin: 0;
+  color: #666;
   line-height: 1.35;
 }
 
@@ -1345,30 +1401,52 @@ body[data-screen-profile="tablet_10"] .confirmDialogBody {
 
 
 
-/* Выделение весовых товаров в заказе */
+/* Выделение весовых товаров в заказе: информационная голубая подсветка */
 .weightLineRow {
-  background: #fff3cd;
-  border-color: #d69e00;
-  box-shadow: inset 7px 0 0 #d69e00;
+  background: #e8f4ff;
+  border-color: #3b82f6;
+  box-shadow: inset 7px 0 0 #3b82f6;
 }
 
 .weightLineRow:hover {
-  background: #ffe8a3;
-  border-color: #b77900;
+  background: #dbeafe;
+  border-color: #2563eb;
 }
 
 .weightLineRow b {
-  color: #3d2b00;
+  color: #0f3d7a;
 }
 
 .weightLineRow small {
+  color: #1e4f8f;
+}
+
+body[data-screen-profile="tablet_10"] .weightLineRow {
+  box-shadow: inset 6px 0 0 #3b82f6;
+}
+
+/* Несохраненные/измененные строки важнее типа товара: оставляем warning-желтый */
+.lineRow.unsavedLineRow {
+  background: #fff7cc;
+  border-color: #facc15;
+  box-shadow: inset 7px 0 0 #facc15;
+}
+
+.lineRow.unsavedLineRow:hover {
+  background: #fff1a8;
+  border-color: #eab308;
+}
+
+.lineRow.unsavedLineRow b {
+  color: #3d2b00;
+}
+
+.lineRow.unsavedLineRow small {
   color: #6b4e00;
 }
 
-
-
-body[data-screen-profile="tablet_10"] .weightLineRow {
-  box-shadow: inset 6px 0 0 #d69e00;
+body[data-screen-profile="tablet_10"] .lineRow.unsavedLineRow {
+  box-shadow: inset 6px 0 0 #facc15;
 }
 
 
@@ -2187,6 +2265,32 @@ body[data-screen-profile="tablet_10"] .orderCardAmountRow b {
   font-variant-numeric: tabular-nums;
 }
 
+.orderSummaryCompact .orderBalanceCard {
+  background: #e8f7ee;
+  border: 1px solid #8fd1aa;
+  box-shadow: inset 0 0 0 1px rgba(23, 122, 65, 0.08);
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.orderSummaryCompact .orderBalanceCard span {
+  color: #2d6a45;
+  font-weight: 700;
+}
+
+.orderSummaryCompact .orderBalanceCard b {
+  color: #14532d;
+}
+
+.orderSummaryCompact .orderBalanceCard:active {
+  transform: translateY(1px);
+}
+
+.orderSummaryCompact .orderBalanceCard.isRefreshing {
+  opacity: 0.75;
+}
+
 .orderStatusBox {
   min-width: 170px;
   align-self: start;
@@ -2850,4 +2954,648 @@ body[data-screen-profile="tablet_10"] .topbarLogoutSpacer {
   min-height: 34px;
   padding: 0 8px;
   font-size: 12px;
+}
+
+
+/* Вложенные окна левого меню */
+.sideMenuRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: calc(100dvh - 110px);
+  padding: 18px 0;
+}
+
+.sideMenuSubWindow {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  background: #fafafa;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.06);
+}
+
+.sideMenuSubHeader {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.sideMenuBackButton {
+  width: fit-content;
+  padding: 10px 14px;
+}
+
+.sideMenuSubTitle span,
+.sideMenuSubTitle b {
+  display: block;
+}
+
+.sideMenuSubTitle span {
+  color: #666;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sideMenuSubTitle b {
+  margin-top: 4px;
+  font-size: 22px;
+}
+
+.sideMenuSettingsList {
+  display: grid;
+  gap: 12px;
+}
+
+.sideMenuSubWindow .sideMenuSection {
+  padding: 14px;
+  border: 1px solid #eeeeee;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.sideMenuSubWindow .sideMenuSection:last-child {
+  border-bottom: 1px solid #eeeeee;
+}
+
+.sideMenuEmptyState {
+  padding: 18px;
+  border: 1px dashed #cfcfcf;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.sideMenuEmptyState b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.sideMenuEmptyState p {
+  margin: 0;
+  color: #666;
+  line-height: 1.35;
+}
+
+
+.sideMenuRootMain {
+  display: grid;
+  gap: 12px;
+}
+
+
+.sideMenuRootActions {
+  display: grid;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid #e8e8e8;
+}
+
+/* Общий селектор товара: используется в заказе и приходе */
+.productSelectorBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.productSelectorSearchRow {
+  grid-template-columns: 1fr 120px 160px;
+}
+
+.selectedProductCard {
+  display: grid;
+  grid-template-columns: 86px 1fr 110px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #8fd1aa;
+  border-radius: 12px;
+  background: #eef7f0;
+}
+
+.selectedProductCard b,
+.selectedProductCard span {
+  display: block;
+}
+
+.selectedProductCard b {
+  font-size: 18px;
+  margin-bottom: 5px;
+  color: #064f24;
+}
+
+.selectedProductCard span {
+  color: #2f6f48;
+  font-size: 14px;
+  margin-top: 3px;
+}
+
+body[data-screen-profile="tablet_10"] .productSelectorSearchRow {
+  grid-template-columns: 1fr 96px 130px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .selectedProductCard {
+  grid-template-columns: 70px 1fr 92px;
+  gap: 10px;
+  padding: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .selectedProductCard b {
+  font-size: 15px;
+}
+
+body[data-screen-profile="tablet_10"] .selectedProductCard span {
+  font-size: 12px;
+}
+
+/* Количество в окне Приход: используем ту же кастомную клавиатуру, что и в заказе */
+.stockQtyBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.stockQtyControl {
+  margin-top: 0;
+}
+
+.stockQtyKeypad {
+  margin-top: 0;
+}
+
+.stockQtyHint {
+  margin-top: 0;
+  text-align: left;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.stockQtyKindHint {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .stockQtyBlock {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockQtyKindHint,
+body[data-screen-profile="tablet_10"] .stockQtyHint {
+  font-size: 12px;
+}
+
+/* Экран оприходования товара */
+.stockReceiptScreen {
+  padding: 22px;
+}
+
+.stockReceiptMain {
+  min-height: calc(100dvh - 120px);
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 5px 22px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.stockReceiptTop {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(220px, auto);
+  gap: 18px;
+  align-items: start;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 16px;
+}
+
+.stockReceiptTop h2 {
+  margin: 0 0 6px;
+}
+
+.stockReceiptTop .muted {
+  margin: 0;
+}
+
+.stockReceiptStatus {
+  text-align: right;
+}
+
+.stockReceiptStatus span,
+.stockReceiptStatus b {
+  display: block;
+}
+
+.stockReceiptStatus span {
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.stockReceiptStatus b {
+  font-size: 20px;
+}
+
+.stockReceiptLayout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(420px, 1.25fr) minmax(360px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.stockReceiptSelectorCard,
+.stockReceiptOperationCard {
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid #e1e1e1;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.stockReceiptOperationCard {
+  display: grid;
+  gap: 14px;
+}
+
+.stockReceiptSearchRow {
+  grid-template-columns: minmax(220px, 1fr) 170px;
+}
+
+.stockReceiptSearchResults {
+  max-height: calc(100dvh - 390px);
+}
+
+.stockReceiptSelectedProduct {
+  margin-top: 4px;
+}
+
+.stockReceiptActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptScreen {
+  height: calc(100dvh - 50px);
+  max-height: calc(100dvh - 50px);
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptMain {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px;
+  border-radius: 10px;
+  gap: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptTop {
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, auto);
+  gap: 10px;
+  padding-bottom: 10px;
+  flex: 0 0 auto;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptTop h2 {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptTop .muted,
+body[data-screen-profile="tablet_10"] .stockReceiptStatus span {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptStatus b {
+  font-size: 15px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptLayout {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-columns: minmax(340px, 1.15fr) minmax(300px, 0.85fr);
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptSelectorCard,
+body[data-screen-profile="tablet_10"] .stockReceiptOperationCard {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptSearchRow {
+  grid-template-columns: minmax(170px, 1fr) 118px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptSearchResults {
+  max-height: none;
+}
+
+body[data-screen-profile="tablet_10"] .stockReceiptActions {
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .stockReceiptTop,
+  .stockReceiptLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .stockReceiptStatus {
+    text-align: left;
+  }
+}
+
+/* Операции с cash-балансом пайщика: QR, PIN и кнопка Выдать */
+.cashQrDialog {
+  width: min(620px, 100%);
+}
+
+.cashQrImageBox {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.cashQrImageBox img {
+  width: 300px;
+  height: 300px;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.cashQrHint {
+  margin: 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+.cashQrUrl {
+  margin: 0;
+  text-align: center;
+  word-break: break-all;
+  font-size: 13px;
+}
+
+.cashoutPinDialog input {
+  text-align: center;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-screen-profile="tablet_10"] .bottomActions {
+  grid-template-columns: minmax(0, 1fr) 100px 76px 86px 112px;
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .cashQrDialog {
+  width: min(560px, 96vw);
+}
+
+body[data-screen-profile="tablet_10"] .cashQrImageBox img {
+  width: 240px;
+  height: 240px;
+}
+
+body[data-screen-profile="tablet_10"] .cashoutPinDialog input {
+  font-size: 24px;
+}
+
+@media (min-width: 701px) {
+  .bottomActions {
+    grid-template-columns: minmax(0, 1fr) 132px 92px 104px 142px;
+  }
+}
+
+@media (max-width: 700px) {
+  .bottomActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Экран Запасы: операции оприходования и списания */
+.stockWorkOverlay {
+  align-items: stretch;
+  padding: 18px;
+}
+
+.stockWorkScreen {
+  width: min(1280px, 100%);
+  gap: 16px;
+}
+
+.stockWorkHeader {
+  flex: 0 0 auto;
+}
+
+.stockWorkLayout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(420px, 1.25fr) minmax(380px, 0.85fr);
+  gap: 16px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.stockWorkSelectorCard,
+.stockWorkOperationCard {
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid #e1e1e1;
+  border-radius: 14px;
+  background: #fafafa;
+  overflow-y: auto;
+}
+
+.stockWorkOperationCard {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.stockWorkSearchRow {
+  grid-template-columns: minmax(220px, 1fr) 170px;
+}
+
+.stockWorkSelectedProduct {
+  margin-top: 4px;
+}
+
+.stockWorkSearchResults {
+  max-height: calc(100dvh - 420px);
+}
+
+.stockWorkOperationCard h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.stockWorkOperationSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stockWorkOperationButton {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  text-align: left;
+  border: 2px solid #d8d8d8;
+  background: #f6f6f6;
+  color: #222;
+}
+
+.stockWorkOperationButton b,
+.stockWorkOperationButton span {
+  display: block;
+}
+
+.stockWorkOperationButton b {
+  font-size: 17px;
+}
+
+.stockWorkOperationButton span {
+  color: #666;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.stockWorkOperationButton.post.active {
+  border-color: #2d7d32;
+  background: #e8f5e9;
+  color: #14532d;
+}
+
+.stockWorkOperationButton.post.active span {
+  color: #2d6a45;
+}
+
+.stockWorkOperationButton.writeoff.active {
+  border-color: #b71c1c;
+  background: #ffebee;
+  color: #7f1d1d;
+}
+
+.stockWorkOperationButton.writeoff.active span {
+  color: #991b1b;
+}
+
+.stockWorkActions {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOverlay {
+  padding: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkScreen {
+  width: 100%;
+  border-radius: 12px;
+  padding: 12px;
+  gap: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkHeader {
+  padding-bottom: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkHeader h2 {
+  font-size: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkHeader .muted {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkLayout {
+  grid-template-columns: minmax(330px, 1.15fr) minmax(300px, 0.85fr);
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkSelectorCard,
+body[data-screen-profile="tablet_10"] .stockWorkOperationCard {
+  padding: 10px;
+  border-radius: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkSearchRow {
+  grid-template-columns: minmax(170px, 1fr) 128px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkSearchResults {
+  max-height: none;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationSwitch {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationButton {
+  padding: 10px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationButton b {
+  font-size: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkOperationButton span {
+  font-size: 11px;
+}
+
+body[data-screen-profile="tablet_10"] .stockWorkActions {
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .stockWorkLayout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+}
+
+
+/* Основной экран: только на широком ПК сумма пополнения отдельной строкой,
+   планшет/мобильная адаптация остаются в прежней одной строке. */
+@media (min-width: 1101px) {
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions {
+    grid-template-columns: repeat(4, minmax(110px, 1fr));
+    align-items: end;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions .sumBox {
+    grid-column: 1 / -1;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions .sumBox label {
+    white-space: nowrap;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions button {
+    min-height: 56px;
+  }
 }

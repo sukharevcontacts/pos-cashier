@@ -13,6 +13,8 @@ from app.api import (
     stock,
     transactions,
     cashier_settings,
+    status,
+    cash,
 )
 
 
@@ -30,3 +32,5 @@ api_router.include_router(topup.router)
 api_router.include_router(stock.router)
 api_router.include_router(transactions.router)
 api_router.include_router(cashier_settings.router)
+api_router.include_router(status.router)
+api_router.include_router(cash.router)

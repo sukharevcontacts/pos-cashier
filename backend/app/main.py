@@ -9,7 +9,9 @@ from sqlalchemy import text
 from app.api.router import api_router
 from app.core.config import APP_NAME
 from app.db.session import engine
+from app.core.logger import setup_logger
 
+setup_logger()
 
 app = FastAPI(title=APP_NAME)
 

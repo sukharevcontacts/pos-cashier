@@ -3,10 +3,11 @@ import introImage from './assets/intro.jpg'
 import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
-type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | null
+type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | 'cashoutPin' | null
+type SideMenuTab = 'root' | 'shareholder' | 'stock' | 'chats' | 'reports' | 'settings'
 
 type CashierSettings = {
-  cashier_account: number
+  cashier_account: number | string
   screen_profile: ScreenProfile
   appearance_theme: string
   settings_json: Record<string, unknown>
@@ -18,10 +19,11 @@ type Store = {
   store_address: string | null
   owner_account: number | null
   owner_balance: number | null
+  default_warehouse?: number | null
 }
 
 type Cashier = {
-  cashier_account: number
+  cashier_account: number | string
   user_fam: string | null
   user_name: string | null
   user_otch: string | null
@@ -34,7 +36,36 @@ type LoginResponse = {
   stores: Store[]
 }
 
+function toSafeInt(value: unknown, fallback = 0) {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.trunc(n) : fallback
+}
+
+function getErrorMessage(data: any, fallback: string) {
+  if (!data?.detail) return fallback
+  if (typeof data.detail === 'string') return data.detail
+  if (data.detail?.error) return String(data.detail.error)
+  if (Array.isArray(data.detail)) {
+    return data.detail.map((item: any) => item?.msg || JSON.stringify(item)).join('; ') || fallback
+  }
+  return fallback
+}
+
+function isOrderCancelable(order: FoundOrder) {
+  const status = String(order.status || '').toLowerCase()
+  const statusLabel = String(order.status_label || '').toLowerCase()
+
+  return (
+    status === 'in_progress' ||
+    status.includes('передан') ||
+    statusLabel.includes('передан') ||
+    status.includes('выполнение') ||
+    statusLabel.includes('выполнение')
+  )
+}
+
 type FoundUser = {
+  user_id?: number | null
   user_account: number
   user_phone: string | null
   user_name: string | null
@@ -66,6 +97,43 @@ type SearchResponse = {
   orders: FoundOrder[]
 }
 
+type OrderPaymentQrDialog = {
+  order_number: number
+  amount: number
+  old_balance: number
+  qr_base64: string
+  image_type: string
+  qr_url: string | null
+  ttl: number
+  created_at: number
+}
+
+type CashQrDialog = {
+  amount: number
+  old_balance: number
+  qr_base64: string
+  image_type: string
+  qr_url: string | null
+  ttl: number
+  created_at: number
+}
+
+type CashoutCheckDialog = {
+  amount: number
+  amountwithcomission: number
+  customerbalance: number
+  cashierbalance: number
+  moneyincashbox: number
+}
+
+type CashSuccessDialog = {
+  title: string
+  text: string
+  customerbalance?: number
+  cashierbalance?: number
+  moneyincashbox?: number
+}
+
 type UserTransactionRow = {
   line_id: number
   transaction_id: string
@@ -87,11 +155,19 @@ type UserTransactionRow = {
 }
 
 type OrderLine = {
-  order_line_id: number
+  order_line_id: number | null
+  good_id: number
+  good_name: string
+  unit: string
+  id: number
+  name: string
+  code?: string | null
+  isfractional?: boolean
+  is_local?: boolean
+  is_dirty?: boolean
   item: number
   item_name: string
   photo_url: string | null
-  item_type: 'piece' | 'weight'
   avg_weight: number | null
   pack: string | null
   qty: number
@@ -105,12 +181,20 @@ type OrderLine = {
 }
 
 type StoreItem = {
+  good_id?: number
+  good_name?: string
+  id?: number
+  name?: string
+  code?: string | null
+  isfractional?: boolean
+  unit?: string | null
+  category?: number | string | null
+  currency?: string | null
   item: number
   item_name: string
   item_category: string | null
   item_subcategory: string | null
   photo_url: string | null
-  item_type: 'piece' | 'weight'
   avg_weight: number | null
   pack: string | null
   price: number
@@ -180,7 +264,8 @@ type OrderReceiptResponse = {
     order_line_id: number
     item: number
     item_name: string
-    item_type: 'piece' | 'weight'
+    isfractional?: boolean | null
+    item_type?: 'piece' | 'weight'
     pack: string | null
     qty_final: number
     price: number
@@ -195,6 +280,91 @@ type OrderReceiptResponse = {
 }
 
 const API_BASE = '/pos-api'
+const SESSION_ID_STORAGE_KEY = 'session_id'
+const STORE_ID_STORAGE_KEY = 'store_id'
+const CASHIER_STORAGE_KEY = 'cashier'
+const STORES_STORAGE_KEY = 'stores'
+
+function readStoredSessionId() {
+  if (typeof window === 'undefined') return ''
+  return window.sessionStorage.getItem(SESSION_ID_STORAGE_KEY) || ''
+}
+
+function saveStoredSessionId(value: string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(SESSION_ID_STORAGE_KEY, value)
+}
+
+function clearStoredSessionId() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(SESSION_ID_STORAGE_KEY)
+}
+
+function saveStoredStoreId(value: number | string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(STORE_ID_STORAGE_KEY, String(value))
+}
+
+function clearStoredStoreId() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(STORE_ID_STORAGE_KEY)
+}
+
+function readStoredStoreId() {
+  if (typeof window === 'undefined') return ''
+  return window.sessionStorage.getItem(STORE_ID_STORAGE_KEY) || ''
+}
+
+function readStoredJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+
+  try {
+    const raw = window.sessionStorage.getItem(key)
+    return raw ? JSON.parse(raw) as T : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveStoredJson(key: string, value: unknown) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(key, JSON.stringify(value))
+}
+
+function clearStoredJson(key: string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(key)
+}
+
+function readStoredCashier(): Cashier | null {
+  return readStoredJson<Cashier | null>(CASHIER_STORAGE_KEY, null)
+}
+
+function saveStoredCashier(value: Cashier) {
+  saveStoredJson(CASHIER_STORAGE_KEY, value)
+}
+
+function clearStoredCashier() {
+  clearStoredJson(CASHIER_STORAGE_KEY)
+}
+
+function readStoredStores(): Store[] {
+  return readStoredJson<Store[]>(STORES_STORAGE_KEY, [])
+}
+
+function saveStoredStores(value: Store[]) {
+  saveStoredJson(STORES_STORAGE_KEY, value)
+}
+
+function clearStoredStores() {
+  clearStoredJson(STORES_STORAGE_KEY)
+}
+
+function readStoredSelectedStore(stores: Store[]) {
+  const storedStoreId = readStoredStoreId()
+  if (!storedStoreId) return null
+  return stores.find((store) => String(store.store_id) === String(storedStoreId)) || null
+}
 
 function formatMoney(value: number | string | null | undefined) {
   const n = Number(value ?? 0)
@@ -204,10 +374,14 @@ function formatMoney(value: number | string | null | undefined) {
   })
 }
 
-function formatQty(value: number | null | undefined, itemType?: string) {
+function isFractionalFlag(value: unknown) {
+  return value === true || value === 'true' || value === 'weight'
+}
+
+function formatQty(value: number | null | undefined, isfractional?: boolean | string | null) {
   const n = Number(value ?? 0)
 
-  if (itemType === 'piece') {
+  if (!isFractionalFlag(isfractional)) {
     return n.toLocaleString('ru-RU', {
       maximumFractionDigits: 0,
     })
@@ -219,16 +393,338 @@ function formatQty(value: number | null | undefined, itemType?: string) {
   })
 }
 
+
+function toNumber(value: any, fallback = 0) {
+  const n = Number(value ?? fallback)
+  return Number.isFinite(n) ? n : fallback
+}
+
+type ItemSearchParam = {
+  key: 'ids' | 'barcode' | 'q'
+  value: string
+}
+
+function getItemSearchParam(query: string): ItemSearchParam | null {
+  const value = query.trim()
+
+  if (!value) {
+    return null
+  }
+
+  const isOnlyDigits = /^\d+$/.test(value)
+
+  if (!isOnlyDigits) {
+    return { key: 'q', value }
+  }
+
+  // Короткое число в кассе считаем ID товара Paritet, длинное число — штрихкод.
+  return value.length >= 8 ? { key: 'barcode', value } : { key: 'ids', value }
+}
+
+function buildItemSearchParams(query: string) {
+  const params = new URLSearchParams()
+  const searchParam = getItemSearchParam(query)
+
+  if (!searchParam) {
+    return params
+  }
+
+  // Защита от регресса: barcode никогда не должен получать текстовый запрос.
+  if (searchParam.key === 'barcode' && !/^\d+$/.test(searchParam.value)) {
+    params.set('q', searchParam.value)
+    return params
+  }
+
+  params.set(searchParam.key, searchParam.value)
+  return params
+}
+
+function extractParitetGoods(data: any): any[] {
+  if (Array.isArray(data?.goods)) return data.goods
+  if (Array.isArray(data?.payload?.goods)) return data.payload.goods
+  if (data?.payload && data.payload.id != null) return [data.payload]
+  if (data?.id != null) return [data]
+  return []
+}
+
+function getOrderLineUiId(line: { order_line_id?: number | null; item: number }) {
+  return line.order_line_id ?? line.item
+}
+
+function isOrderLineUnsaved(line: OrderLine) {
+  return Boolean(line.is_local || line.is_dirty || (typeof line.order_line_id === 'number' && line.order_line_id < 0))
+}
+
+function isInsufficientFundsError(message: string) {
+  const normalized = String(message || '').toLowerCase()
+  return normalized.includes('недостат') || normalized.includes('insufficient')
+}
+
+function buildQrImageSrc(qrBase64: string, imageType?: string | null) {
+  if (!qrBase64) return ''
+  if (qrBase64.startsWith('data:')) return qrBase64
+  return `data:${imageType || 'image/png'};base64,${qrBase64}`
+}
+
+function getOrderHasUnsavedChanges(orderDetails: OrderDetailsResponse | null) {
+  return Boolean(orderDetails?.lines?.some((line) => isOrderLineUnsaved(line)))
+}
+
+function getOrderLineRowStyle(line: OrderLine, dragLineId: number | null, animatingLineId: number | null, dragX: number, commitX: number) {
+  const lineId = getOrderLineUiId(line)
+  const baseStyle = isOrderLineUnsaved(line) ? { backgroundColor: '#fff7cc' } : {}
+
+  if (dragLineId === lineId) {
+    return {
+      ...baseStyle,
+      transform: `translateX(${dragX}px)`,
+      opacity: Math.max(0.72, 1 - dragX / 420),
+    }
+  }
+
+  if (animatingLineId === lineId) {
+    return {
+      ...baseStyle,
+      '--swipe-start-x': `${commitX}px`,
+    } as any
+  }
+
+  return Object.keys(baseStyle).length ? baseStyle : undefined
+}
+
+function getOrderCardSwipeStyle(orderNumber: number, dragOrderNumber: number | null, dragX: number) {
+  if (dragOrderNumber !== orderNumber) return undefined
+
+  return {
+    transform: `translateX(${dragX}px)`,
+    opacity: Math.max(0.78, 1 - Math.abs(dragX) / 420),
+    touchAction: 'pan-y',
+  } as any
+}
+
+function recalcOrderLine(line: OrderLine, nextQty: number): OrderLine {
+  const normalizedQty = Math.max(0, toNumber(nextQty, 0))
+  return {
+    ...line,
+    qty: normalizedQty,
+    qty_final: normalizedQty,
+    line_sum: normalizedQty * toNumber(line.price, 0),
+    max_qty_final: normalizedQty + toNumber(line.available_qty, 0),
+    is_dirty: true,
+  }
+}
+
+function mapParitetProductToStoreItem(product: any): StoreItem {
+  const productId = toNumber(product?.id, 0)
+  const productName = String(product?.name ?? '')
+  const itemStock = toNumber(product?.count, 0)
+  const availableQty = toNumber(product?.availablecount, itemStock)
+  const isFractional = Boolean(product?.isfractional)
+
+  return {
+    good_id: productId,
+    good_name: productName,
+    id: productId,
+    name: productName,
+    code: product?.code ?? null,
+    isfractional: isFractional,
+    unit: product?.unit ?? null,
+    category: product?.category ?? null,
+    currency: product?.currency ?? null,
+    item: productId,
+    item_name: productName,
+    item_category: product?.category != null ? String(product.category) : null,
+    item_subcategory: null,
+    photo_url: product?.preview ?? null,
+    avg_weight: null,
+    pack: product?.unit ?? null,
+    price: toNumber(product?.price, 0),
+    item_stock: itemStock,
+    reserve: Math.max(itemStock - availableQty, 0),
+    available_qty: availableQty,
+  }
+}
+
+function mapParitetOrderLineToFront(item: any): OrderLine {
+  const product = item?.product || {}
+  const mappedProduct = mapParitetProductToStoreItem(product)
+  const qty = toNumber(item?.count, 0)
+  const price = toNumber(item?.price, mappedProduct.price)
+
+  return {
+    order_line_id: item?.id != null ? toNumber(item.id, 0) : null,
+    good_id: mappedProduct.item,
+    good_name: mappedProduct.item_name,
+    unit: mappedProduct.pack || '',
+    id: mappedProduct.item,
+    name: mappedProduct.item_name,
+    code: mappedProduct.code,
+    isfractional: mappedProduct.isfractional,
+    is_local: false,
+    is_dirty: false,
+    item: mappedProduct.item,
+    item_name: mappedProduct.item_name,
+    photo_url: mappedProduct.photo_url,
+    avg_weight: mappedProduct.avg_weight,
+    pack: mappedProduct.pack,
+    qty,
+    price,
+    qty_final: qty,
+    line_sum: qty * price,
+    item_stock: mappedProduct.item_stock,
+    reserve: mappedProduct.reserve,
+    available_qty: mappedProduct.available_qty,
+    max_qty_final: qty + mappedProduct.available_qty,
+  }
+}
+
+function mapStoreItemToOrderLine(product: StoreItem): OrderLine {
+  const qty = 1
+  const tempLineId = -Date.now() - product.item
+
+  return {
+    order_line_id: tempLineId,
+    good_id: product.item,
+    good_name: product.item_name,
+    unit: product.pack || '',
+    id: product.item,
+    name: product.item_name,
+    code: product.code ?? null,
+    isfractional: product.isfractional,
+    is_local: true,
+    is_dirty: true,
+    item: product.item,
+    item_name: product.item_name,
+    photo_url: product.photo_url,
+    avg_weight: product.avg_weight,
+    pack: product.pack,
+    qty,
+    price: product.price,
+    qty_final: qty,
+    line_sum: qty * product.price,
+    item_stock: product.item_stock,
+    reserve: product.reserve,
+    available_qty: Math.max(product.available_qty - qty, 0),
+    max_qty_final: product.available_qty,
+  }
+}
+
+function mapBackendOrderLineToFront(line: any): OrderLine {
+  const qtyFinal = toNumber(line?.qty_final ?? line?.qty, 0)
+  const price = toNumber(line?.price, 0)
+  const isfractional = isFractionalFlag(line?.isfractional ?? line?.item_type)
+  const item = toNumber(line?.item ?? line?.good_id ?? line?.id, 0)
+  const itemName = String(line?.item_name ?? line?.good_name ?? line?.name ?? '')
+  const unit = String(line?.unit ?? line?.pack ?? '')
+
+  return {
+    ...line,
+    order_line_id: line?.order_line_id != null ? toNumber(line.order_line_id, 0) : null,
+    good_id: toNumber(line?.good_id ?? item, item),
+    good_name: String(line?.good_name ?? itemName),
+    unit,
+    id: toNumber(line?.id ?? item, item),
+    name: String(line?.name ?? itemName),
+    code: line?.code ?? null,
+    isfractional,
+    is_local: Boolean(line?.is_local ?? false),
+    is_dirty: Boolean(line?.is_dirty ?? false),
+    item,
+    item_name: itemName,
+    photo_url: line?.photo_url ?? null,
+    avg_weight: line?.avg_weight ?? null,
+    pack: line?.pack ?? line?.unit ?? null,
+    qty: toNumber(line?.qty ?? qtyFinal, qtyFinal),
+    price,
+    qty_final: qtyFinal,
+    line_sum: toNumber(line?.line_sum, qtyFinal * price),
+    item_stock: toNumber(line?.item_stock, 0),
+    reserve: toNumber(line?.reserve, 0),
+    available_qty: toNumber(line?.available_qty, 0),
+    max_qty_final: toNumber(line?.max_qty_final, qtyFinal + toNumber(line?.available_qty, 0)),
+  }
+}
+
+function mapParitetOrderToFrontResponse(data: any, foundUser: FoundUser, selectedStore: Store): OrderDetailsResponse {
+  const payload = data?.payload || data || {}
+  const lines = Array.isArray(payload.items)
+    ? payload.items.map(mapParitetOrderLineToFront)
+    : Array.isArray(data?.lines)
+      ? data.lines.map(mapBackendOrderLineToFront)
+      : []
+
+  const orderSum = toNumber(payload.price, lines.reduce((sum: number, line: OrderLine) => sum + toNumber(line.line_sum, 0), 0))
+
+  return {
+    ok: true,
+    readonly: payload.canedit === false || data?.readonly === true,
+    order: {
+      order_number: toNumber(payload.number ?? payload.id ?? data?.order?.order_number, 0),
+      user_account: foundUser.user_account,
+      store_id: selectedStore.store_id,
+      status: String(payload.state ?? data?.order?.status ?? ''),
+      status_label: String(payload.state ?? data?.order?.status_label ?? 'Заказ'),
+      order_sum: orderSum,
+      user_phone: foundUser.user_phone,
+      user_name: foundUser.user_name,
+      user_fam: foundUser.user_fam,
+      user_otch: foundUser.user_otch,
+      user_balance: toNumber(foundUser.balance, 0),
+      user_photo_url: foundUser.photo_url,
+    },
+    store: data?.store || {
+      store_id: selectedStore.store_id,
+      owner_account: selectedStore.owner_account || 0,
+      owner_balance: selectedStore.owner_balance || 0,
+      cash_balance: 0,
+      cash_limit: 0,
+    },
+    lines,
+  }
+}
+
+
+function createLocalNewOrderDetails(foundUser: FoundUser, selectedStore: Store): OrderDetailsResponse {
+  return {
+    ok: true,
+    readonly: false,
+    order: {
+      order_number: 0,
+      user_account: foundUser.user_account,
+      store_id: selectedStore.store_id,
+      status: 'local_new',
+      status_label: 'Новый заказ',
+      order_sum: 0,
+      user_phone: foundUser.user_phone,
+      user_name: foundUser.user_name,
+      user_fam: foundUser.user_fam,
+      user_otch: foundUser.user_otch,
+      user_balance: toNumber(foundUser.balance, 0),
+      user_photo_url: foundUser.photo_url,
+    },
+    store: {
+      store_id: selectedStore.store_id,
+      owner_account: selectedStore.owner_account || 0,
+      owner_balance: selectedStore.owner_balance || 0,
+      cash_balance: 0,
+      cash_limit: 0,
+    },
+    lines: [],
+  }
+}
+
 function App() {
-  const [cashierAccount, setCashierAccount] = useState('1000728')
+  const [cashierAccount, setCashierAccount] = useState('')
   const [cashierPasswd, setCashierPasswd] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [sessionId, setSessionId] = useState('')
-  const [cashier, setCashier] = useState<Cashier | null>(null)
-  const [stores, setStores] = useState<Store[]>([])
-  const [selectedStore, setSelectedStore] = useState<Store | null>(null)
+  const [sessionId, setSessionId] = useState(() => readStoredSessionId())
+  const [cashier, setCashier] = useState<Cashier | null>(() => readStoredCashier())
+  const [stores, setStores] = useState<Store[]>(() => readStoredStores())
+  const [selectedStore, setSelectedStore] = useState<Store | null>(() => readStoredSelectedStore(readStoredStores()))
+  const [storeSelectLoading, setStoreSelectLoading] = useState(false)
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
+  const [sideMenuTab, setSideMenuTab] = useState<SideMenuTab>('root')
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [mainKeypadTarget, setMainKeypadTarget] = useState<MainKeypadTarget>(null)
@@ -237,6 +733,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null)
+  const [ownerBalance, setOwnerBalance] = useState<number>(0)
+  const [cashBalance, setCashBalance] = useState<number>(0)
   const [orders, setOrders] = useState<FoundOrder[]>([])
   const [storeState, setStoreState] = useState<SearchResponse['store'] | null>(null)
   const [txDialogOpen, setTxDialogOpen] = useState(false)
@@ -247,6 +745,13 @@ function App() {
   const [cashTopupLoading, setCashTopupLoading] = useState(false)
   const [cashTopupConfirmOpen, setCashTopupConfirmOpen] = useState(false)
   const cashTopupConfirmOpenedAtRef = useRef(0)
+  const [cashOperationMessage, setCashOperationMessage] = useState('')
+  const [cashSuccessDialog, setCashSuccessDialog] = useState<CashSuccessDialog | null>(null)
+  const [cashQrDialog, setCashQrDialog] = useState<CashQrDialog | null>(null)
+  const [cashQrLoading, setCashQrLoading] = useState(false)
+  const [cashoutCheckDialog, setCashoutCheckDialog] = useState<CashoutCheckDialog | null>(null)
+  const [cashoutPin, setCashoutPin] = useState('')
+  const [cashoutLoading, setCashoutLoading] = useState(false)
 
   const [newUserDialogOpen, setNewUserDialogOpen] = useState(false)
   const [newUserLoading, setNewUserLoading] = useState(false)
@@ -263,23 +768,41 @@ function App() {
   const [stockDialogOpen, setStockDialogOpen] = useState(false)
   const [stockLoading, setStockLoading] = useState(false)
   const [stockMessage, setStockMessage] = useState('')
+  const [stockSuccessDialog, setStockSuccessDialog] = useState<{ itemName: string; qty: string } | null>(null)
   const [stockForm, setStockForm] = useState({
     item: '',
     qty_delta: '',
     comment: '',
   })
+  const [stockSelectedItem, setStockSelectedItem] = useState<StoreItem | null>(null)
   const [stockSearchQuery, setStockSearchQuery] = useState('')
   const [stockSearchLoading, setStockSearchLoading] = useState(false)
   const [stockSearchItems, setStockSearchItems] = useState<StoreItem[]>([])
+  const [stockQtyCaretIndex, setStockQtyCaretIndex] = useState(0)
+  const stockSearchInputRef = useRef<HTMLInputElement | null>(null)
   const [stockViewDialogOpen, setStockViewDialogOpen] = useState(false)
   const [stockViewQuery, setStockViewQuery] = useState('')
   const [stockViewLoading, setStockViewLoading] = useState(false)
   const [stockViewItems, setStockViewItems] = useState<StoreItem[]>([])
+  const [stockViewSelectedItem, setStockViewSelectedItem] = useState<StoreItem | null>(null)
+  const [stockViewOperation, setStockViewOperation] = useState<'post' | 'writeoff'>('post')
+  const [stockViewQty, setStockViewQty] = useState('')
+  const [stockViewComment, setStockViewComment] = useState('')
+  const [stockViewQtyCaretIndex, setStockViewQtyCaretIndex] = useState(0)
+  const [stockViewMessage, setStockViewMessage] = useState('')
+  const [stockViewSuccessDialog, setStockViewSuccessDialog] = useState<{ itemName: string; qty: string; operation: 'post' | 'writeoff' } | null>(null)
 
 
   const [orderDetails, setOrderDetails] = useState<OrderDetailsResponse | null>(null)
   const [deleteOrderDialog, setDeleteOrderDialog] = useState<FoundOrder | null>(null)
+  const [cancelOrderLoading, setCancelOrderLoading] = useState(false)
+  const [orderSwipeDragNumber, setOrderSwipeDragNumber] = useState<number | null>(null)
+  const [orderSwipeDragX, setOrderSwipeDragX] = useState(0)
+  const orderSwipeRef = useRef<{ orderNumber: number; startX: number; startY: number } | null>(null)
+  const swipedOrderNumberRef = useRef<number | null>(null)
   const [orderLoading, setOrderLoading] = useState(false)
+  const [orderBalanceRefreshLoading, setOrderBalanceRefreshLoading] = useState(false)
+  const lastOrderBalanceRefreshTapAtRef = useRef(0)
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const [receiptLoading, setReceiptLoading] = useState(false)
   const [receiptData, setReceiptData] = useState<OrderReceiptResponse | null>(null)
@@ -298,12 +821,11 @@ function App() {
     async function sendHeartbeat() {
       const params = new URLSearchParams({
         cashier_account: String(heartbeatCashierAccount),
-        session_id: sessionId,
         device_id: 'web',
       })
 
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `${API_BASE}/cashier/orders/${orderNumber}/heartbeat?${params.toString()}`,
           { method: 'POST' }
         )
@@ -322,12 +844,16 @@ function App() {
     return () => {
       window.clearInterval(timer)
     }
-  }, [cashier, orderDetails, sessionId])
+  }, [cashier, orderDetails])
 
   const [itemPickerOpen, setItemPickerOpen] = useState(false)
+  const [itemPickerMode, setItemPickerMode] = useState<'order' | 'stockReceipt' | 'stockView'>('order')
   const [itemSearchQuery, setItemSearchQuery] = useState('')
   const [itemsLoading, setItemsLoading] = useState(false)
   const [quickItemCode, setQuickItemCode] = useState('')
+  const [quickItemMatches, setQuickItemMatches] = useState<StoreItem[]>([])
+  const [quickItemSearchLoading, setQuickItemSearchLoading] = useState(false)
+  const [quickItemDropdownOpen, setQuickItemDropdownOpen] = useState(false)
   const [storeItems, setStoreItems] = useState<StoreItem[]>([])
   const [itemCategories, setItemCategories] = useState<ItemCategoryGroup[]>([])
   const [selectedItemCategory, setSelectedItemCategory] = useState('')
@@ -349,6 +875,9 @@ function App() {
 
   const [payLoading, setPayLoading] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
+  const [orderPaymentMessage, setOrderPaymentMessage] = useState('')
+  const [orderPaymentQrDialog, setOrderPaymentQrDialog] = useState<OrderPaymentQrDialog | null>(null)
+  const [orderPaymentQrLoading, setOrderPaymentQrLoading] = useState(false)
 
   const [sbpDialogOpen, setSbpDialogOpen] = useState(false)
   const [sbpAmount, setSbpAmount] = useState('')
@@ -432,9 +961,89 @@ function App() {
     }
   }, [])
 
-  async function loadCashierSettings(cashierAccountValue: number) {
+  function handleUnauthorizedResponse() {
+    clearStoredSessionId()
+    clearStoredStoreId()
+    clearStoredCashier()
+    clearStoredStores()
+    clearWorkplaceState()
+
+    setSessionId('')
+    setCashier(null)
+    setStores([])
+    setCashierPasswd('')
+    setError('Сессия истекла. Войдите заново')
+  }
+
+  async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+    const storedSessionId = readStoredSessionId()
+    const headers = new Headers(init.headers || {})
+
+    if (storedSessionId) {
+      headers.set('X-Session-Id', storedSessionId)
+    }
+
+    const res = await fetch(input, {
+      ...init,
+      headers,
+    })
+
+    if (res.status === 401) {
+      handleUnauthorizedResponse()
+    }
+
+    return res
+  }
+
+  async function selectStore(store: Store, explicitSessionId?: string) {
+    const activeSessionId = explicitSessionId || sessionId || readStoredSessionId()
+
+    if (!activeSessionId) {
+      throw new Error('Нет активной сессии')
+    }
+
+    const defaultWarehouse = store.default_warehouse
+
+    if (defaultWarehouse == null) {
+      throw new Error('У точки выдачи не указан склад')
+    }
+
+    setStoreSelectLoading(true)
+    setError('')
+
     try {
-      const res = await fetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
+      const res = await fetch(`${API_BASE}/auth/select-store`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': activeSessionId,
+        },
+        body: JSON.stringify({
+          session_id: activeSessionId,
+          store_id: store.store_id,
+          default_warehouse: defaultWarehouse,
+        }),
+      })
+
+      if (res.status === 401) {
+        handleUnauthorizedResponse()
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось выбрать точку выдачи'))
+      }
+
+      setSelectedStore(store)
+      saveStoredStoreId(store.store_id)
+    } finally {
+      setStoreSelectLoading(false)
+    }
+  }
+
+  async function loadCashierSettings(cashierAccountValue: number | string) {
+    try {
+      const res = await apiFetch(`${API_BASE}/cashier/settings/${cashierAccountValue}`)
 
       if (!res.ok) {
         throw new Error('Не удалось загрузить настройки кассира')
@@ -458,7 +1067,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/settings/${cashier.cashier_account}`, {
+      const res = await apiFetch(`${API_BASE}/cashier/settings/${cashier.cashier_account}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -488,6 +1097,12 @@ function App() {
   function appendMainKeypadValue(value: string) {
     if (mainKeypadTarget === 'search') {
       setSearchQuery((current) => `${current || ''}${value}`.replace(/\D/g, ''))
+      return
+    }
+
+    if (mainKeypadTarget === 'cashoutPin') {
+      if (value === '.') return
+      setCashoutPin((current) => `${current || ''}${value}`.replace(/\D/g, '').slice(0, 4))
       return
     }
 
@@ -531,6 +1146,11 @@ function App() {
       return
     }
 
+    if (mainKeypadTarget === 'cashoutPin') {
+      setCashoutPin((current) => String(current || '').slice(0, -1))
+      return
+    }
+
     if (mainKeypadTarget === 'sbpTopup') {
       setSbpAmount((current) => String(current || '').slice(0, -1))
     }
@@ -544,6 +1164,11 @@ function App() {
 
     if (mainKeypadTarget === 'cashTopup') {
       setCashTopupAmount('')
+      return
+    }
+
+    if (mainKeypadTarget === 'cashoutPin') {
+      setCashoutPin('')
       return
     }
 
@@ -565,6 +1190,12 @@ function App() {
       return
     }
 
+    if (mainKeypadTarget === 'cashoutPin') {
+      setMainKeypadTarget(null)
+      void cashout()
+      return
+    }
+
     if (mainKeypadTarget === 'sbpTopup') {
       setMainKeypadTarget(null)
       void sbpTopupStub()
@@ -578,26 +1209,33 @@ function App() {
 
     const isCashTopup = mainKeypadTarget === 'cashTopup'
     const isSbpTopup = mainKeypadTarget === 'sbpTopup'
+    const isCashoutPin = mainKeypadTarget === 'cashoutPin'
     const isMoneyInput = isCashTopup || isSbpTopup
 
     const title =
       mainKeypadTarget === 'search'
         ? '№ П/С, телефон или заказ'
-        : isSbpTopup
-          ? 'Сумма СБП'
-          : 'Сумма наличными'
+        : isCashoutPin
+          ? 'PIN выдачи'
+          : isSbpTopup
+            ? 'Сумма СБП'
+            : 'Сумма наличными'
 
     const value =
       mainKeypadTarget === 'search'
         ? searchQuery
-        : isSbpTopup
-          ? sbpAmount
-          : cashTopupAmount
+        : isCashoutPin
+          ? cashoutPin
+          : isSbpTopup
+            ? sbpAmount
+            : cashTopupAmount
 
     const submitText =
       mainKeypadTarget === 'search'
         ? 'Найти'
-        : 'Пополнить'
+        : isCashoutPin
+          ? 'Выдать'
+          : 'Пополнить'
 
     return (
       <div className="mainKeypadPanel">
@@ -670,6 +1308,30 @@ function App() {
     )
   }
 
+  function closeSideMenu() {
+    setSideMenuOpen(false)
+    setSideMenuTab('root')
+  }
+
+  function openShareholderScreenFromSideMenu() {
+    closeSideMenu()
+    setMainKeypadTarget(null)
+
+    // Возвращаемся к экрану выбранного пайщика.
+    // Самого пайщика, строку поиска и список заказов не очищаем.
+    const unlockPromise = unlockCurrentOrderIfNeeded()
+
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentMessage('')
+    setReceiptDialogOpen(false)
+    setReceiptData(null)
+    setOrderDetails(null)
+    setSelectedOrderNumber(null)
+    setError('')
+
+    void unlockPromise
+  }
+
   function renderSideMenu() {
     if (!cashier) return null
 
@@ -679,7 +1341,7 @@ function App() {
           <button
             className="sideMenuBackdrop"
             aria-label="Закрыть меню"
-            onClick={() => setSideMenuOpen(false)}
+            onClick={closeSideMenu}
           />
         )}
 
@@ -689,37 +1351,165 @@ function App() {
               <b>Меню кассы</b>
               <span>Кассир {cashier.cashier_account}</span>
             </div>
-            <button className="secondary menuCloseButton" onClick={() => setSideMenuOpen(false)}>
+            <button className="secondary menuCloseButton" onClick={closeSideMenu}>
               ×
             </button>
           </div>
 
-          <div className="sideMenuSection">
-            <span className="sideMenuCaption">Настройки</span>
-            <b>Внешний вид</b>
-            <label htmlFor="screen-profile-select">Адаптация под экран</label>
-            <select
-              id="screen-profile-select"
-              value={screenProfile}
-              onChange={(e) => saveScreenProfile(e.target.value as ScreenProfile)}
-              disabled={settingsSaving}
-            >
-              <option value="auto">Авто</option>
-              <option value="tablet_10">Планшет 10 дюймов</option>
-            </select>
-            <p className="sideMenuHint">
-              Настройка сохраняется для текущего кассира и применяется сразу.
-            </p>
-          </div>
+          {sideMenuTab === 'root' && (
+            <div className="sideMenuRoot">
+              <div className="sideMenuRootMain">
+                <button type="button" className="sideMenuTabButton" onClick={openShareholderScreenFromSideMenu}>
+                  1. Пайщик
+                </button>
 
-          <div className="sideMenuSection">
-            <button className="secondary full" onClick={switchStore} disabled={!selectedStore}>
-              Сменить ТВТ
-            </button>
-            <button className="secondary full" onClick={logoutCashier}>
-              Выйти
-            </button>
-          </div>
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => {
+                    closeSideMenu()
+                    void openStockViewDialog()
+                  }}
+                >
+                  2. Запасы
+                </button>
+
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('chats')}
+                >
+                  3. Чаты
+                </button>
+
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('reports')}
+                >
+                  4. Отчеты
+                </button>
+
+                <button
+                  type="button"
+                  className="sideMenuTabButton"
+                  onClick={() => setSideMenuTab('settings')}
+                >
+                  5. Настройки
+                </button>
+              </div>
+
+              <div className="sideMenuRootActions">
+                <button className="secondary full" onClick={switchStore} disabled={!selectedStore}>
+                  Сменить ТВТ
+                </button>
+                <button className="secondary full" onClick={logoutCashier}>
+                  Выйти
+                </button>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'stock' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>2. Запасы</span>
+                  <b>Запасы</b>
+                </div>
+              </div>
+
+              <div className="sideMenuEmptyState">
+                <b>Экран запасов</b>
+                <p>Поиск товара, оприходование и списание доступны в основном экране «Запасы».</p>
+                <button
+                  type="button"
+                  className="primary full"
+                  onClick={() => {
+                    closeSideMenu()
+                    void openStockViewDialog()
+                  }}
+                >
+                  Открыть запасы
+                </button>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'chats' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>3. Чаты</span>
+                  <b>Чаты</b>
+                </div>
+              </div>
+
+              <div className="sideMenuEmptyState">
+                <b>Чаты в разработке</b>
+                <p>Скоро здесь появятся чаты с пайщиками и сервисные уведомления.</p>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'settings' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>5. Настройки</span>
+                  <b>Настройки кассы</b>
+                </div>
+              </div>
+
+              <div className="sideMenuSettingsList">
+                <div className="sideMenuSection">
+                  <span className="sideMenuCaption">Внешний вид</span>
+                  <b>Адаптация под экран</b>
+                  <label htmlFor="screen-profile-select">Режим интерфейса</label>
+                  <select
+                    id="screen-profile-select"
+                    value={screenProfile}
+                    onChange={(e) => saveScreenProfile(e.target.value as ScreenProfile)}
+                    disabled={settingsSaving}
+                  >
+                    <option value="auto">Авто</option>
+                    <option value="tablet_10">Планшет 10 дюймов</option>
+                  </select>
+                  <p className="sideMenuHint">
+                    Настройка сохраняется для текущего кассира и применяется сразу.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {sideMenuTab === 'reports' && (
+            <div className="sideMenuSubWindow">
+              <div className="sideMenuSubHeader">
+                <button type="button" className="secondary sideMenuBackButton" onClick={() => setSideMenuTab('root')}>
+                  ← Меню
+                </button>
+                <div className="sideMenuSubTitle">
+                  <span>4. Отчеты</span>
+                  <b>Отчеты</b>
+                </div>
+              </div>
+
+              <div className="sideMenuEmptyState">
+                <b>Отчеты в разработке</b>
+                <p>Скоро здесь появятся отчеты по кассе, заказам и операциям.</p>
+              </div>
+            </div>
+          )}
         </aside>
       </>
     )
@@ -734,7 +1524,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cashier_account: Number(cashierAccount),
+          cashier_account: cashierAccount.trim(),
           cashier_passwd: cashierPasswd,
         }),
       })
@@ -746,9 +1536,20 @@ function App() {
 
       const data: LoginResponse = await res.json()
 
+      saveStoredSessionId(data.session_id)
+      saveStoredCashier(data.cashier)
+      saveStoredStores(data.stores)
       setSessionId(data.session_id)
       setCashier(data.cashier)
       setStores(data.stores)
+
+      if (data.stores.length === 1) {
+        await selectStore(data.stores[0], data.session_id)
+      } else {
+        clearStoredStoreId()
+        setSelectedStore(null)
+      }
+
       await loadCashierSettings(data.cashier.cashier_account)
     } catch (e: any) {
       setError(e.message || 'Ошибка входа')
@@ -771,7 +1572,7 @@ function App() {
         q: searchQuery,
       })
 
-      const res = await fetch(`${API_BASE}/cashier/search?${params.toString()}`)
+      const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -781,6 +1582,7 @@ function App() {
       const data: SearchResponse = await res.json()
 
       setFoundUser(data.user)
+      await fetchStatus()
       setOrders(data.orders)
       setStoreState(data.store)
     } catch (e: any) {
@@ -793,35 +1595,170 @@ function App() {
     }
   }
 
-  async function refreshCurrentUser(keepSelectedOrderNumber?: number | null) {
+  async function fetchCurrentShareholderData(account: number | string) {
+    if (!cashier || !selectedStore) {
+      throw new Error('Не выбрана точка выдачи или кассир')
+    }
+
+    const params = new URLSearchParams({
+      cashier_account: String(cashier.cashier_account ?? ''),
+      store_id: String(selectedStore.store_id),
+      account: String(account),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось обновить данные пайщика'))
+    }
+
+    const data: SearchResponse = await res.json()
+    return data
+  }
+
+  function applySearchResponse(
+    data: SearchResponse,
+    keepSelectedOrderNumber?: number | null,
+    options: { preserveUserBalance?: number | null } = {}
+  ) {
+    const nextUser =
+      options.preserveUserBalance !== undefined && options.preserveUserBalance !== null
+        ? {
+            ...data.user,
+            balance: options.preserveUserBalance,
+          }
+        : data.user
+
+    setFoundUser(nextUser)
+    setOrders(data.orders)
+    setStoreState(data.store)
+
+    if (keepSelectedOrderNumber !== undefined) {
+      if (keepSelectedOrderNumber) {
+        const exists = data.orders.some((o) => Number(o.order_number) === Number(keepSelectedOrderNumber))
+        setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
+      } else {
+        setSelectedOrderNumber(null)
+      }
+    }
+
+    return {
+      ...data,
+      user: nextUser,
+    }
+  }
+
+  async function refreshCurrentUser(
+    keepSelectedOrderNumber?: number | null,
+    options: { updateCashierStatus?: boolean; preserveUserBalance?: number | null } = {}
+  ) {
     if (!cashier || !selectedStore || !foundUser) return
 
     try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-        q: String(foundUser.user_account),
+      const data = await fetchCurrentShareholderData(foundUser.user_account)
+      const appliedData = applySearchResponse(data, keepSelectedOrderNumber, {
+        preserveUserBalance: options.preserveUserBalance,
       })
 
-      const res = await fetch(`${API_BASE}/cashier/search?${params.toString()}`)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось обновить данные пайщика')
+      if (options.updateCashierStatus !== false) {
+        await fetchStatus()
       }
 
-      const data: SearchResponse = await res.json()
-
-      setFoundUser(data.user)
-      setOrders(data.orders)
-      setStoreState(data.store)
-
-      if (keepSelectedOrderNumber) {
-        const exists = data.orders.some((o) => o.order_number === keepSelectedOrderNumber)
-        setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
-      }
+      return appliedData
     } catch (e: any) {
       setError(e.message || 'Ошибка обновления данных пайщика')
+      return null
+    }
+  }
+
+  function getVisibleOrderUserBalance(order: OrderDetailsResponse['order']) {
+    if (foundUser && String(foundUser.user_account) === String(order.user_account)) {
+      return Number(foundUser.balance || 0)
+    }
+
+    return Number(order.user_balance || 0)
+  }
+
+  async function refreshOrderUserBalance() {
+    if (!cashier || !selectedStore || !orderDetails || orderBalanceRefreshLoading) return
+
+    const targetUserAccount = orderDetails.order.user_account ?? foundUser?.user_account
+
+    if (!targetUserAccount) {
+      setError('Не удалось определить пайщика для обновления баланса')
+      return
+    }
+
+    setOrderBalanceRefreshLoading(true)
+    setError('')
+
+    try {
+      const data = await fetchCurrentShareholderData(targetUserAccount)
+      const freshBalance = Number(data.user.balance || 0)
+      const keepOrderNumber = Number(orderDetails.order.order_number || selectedOrderNumber || 0)
+
+      applySearchResponse(data, keepOrderNumber || undefined)
+
+      setOrderDetails((prev) =>
+        prev
+          ? {
+              ...prev,
+              order: {
+                ...prev.order,
+                user_balance: freshBalance,
+              },
+            }
+          : prev
+      )
+
+      // Здесь обновляем только баланс пайщика в заказе.
+      // Баланс владельца ТВТ и наличные не трогаем, чтобы не сбросить их в 0.
+
+    } catch (e: any) {
+      setError(e.message || 'Ошибка обновления баланса пайщика')
+    } finally {
+      setOrderBalanceRefreshLoading(false)
+    }
+  }
+  function handleOrderBalancePointerUp() {
+    const now = Date.now()
+
+    if (now - lastOrderBalanceRefreshTapAtRef.current <= 450) {
+      lastOrderBalanceRefreshTapAtRef.current = 0
+      void refreshOrderUserBalance()
+      return
+    }
+
+    lastOrderBalanceRefreshTapAtRef.current = now
+  }
+
+
+  async function searchOrders(keepSelectedOrderNumber?: number | null) {
+    if (!cashier || !selectedStore || !foundUser) return
+
+    const params = new URLSearchParams({
+      cashier_account: String(cashier.cashier_account),
+      store_id: String(selectedStore.store_id),
+      q: String(foundUser.user_account),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось обновить список заказов'))
+    }
+
+    const data: SearchResponse = await res.json()
+
+    setFoundUser(data.user)
+    setOrders(data.orders)
+    setStoreState(data.store)
+
+    if (keepSelectedOrderNumber) {
+      const exists = data.orders.some((o) => Number(o.order_number) === Number(keepSelectedOrderNumber))
+      setSelectedOrderNumber(exists ? keepSelectedOrderNumber : null)
     }
   }
 
@@ -844,7 +1781,7 @@ function App() {
     setError('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/users/create`, {
+      const res = await apiFetch(`${API_BASE}/cashier/users/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -857,7 +1794,6 @@ function App() {
           date_of_birth: newUserForm.date_of_birth || null,
           address: newUserForm.address,
           email: newUserForm.email,
-          session_id: sessionId,
           device_id: 'web',
         }),
       })
@@ -870,6 +1806,7 @@ function App() {
       const data = await res.json()
 
       setFoundUser(data.user)
+      await fetchStatus()
       setOrders([])
       setStoreState(data.store)
       setSelectedOrderNumber(null)
@@ -897,87 +1834,525 @@ function App() {
       ...prev,
       [field]: value,
     }))
-  }
 
-  async function loadStockSearchItems(query = stockSearchQuery) {
-    if (!cashier || !selectedStore) return
-
-    setStockSearchLoading(true)
-    setError('')
-
-    try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-        limit: '30',
-      })
-
-      if (query.trim()) {
-        params.set('q', query.trim())
-      }
-
-      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось найти товары')
-      }
-
-      const data = await res.json()
-      setStockSearchItems(data.items || [])
-    } catch (e: any) {
-      setStockSearchItems([])
-      setError(e.message || 'Ошибка поиска товара')
-    } finally {
-      setStockSearchLoading(false)
+    if (field === 'qty_delta') {
+      setStockQtyCaretIndex(String(value || '').length)
     }
   }
 
-  function selectStockItem(item: StoreItem) {
-    updateStockField('item', String(item.item))
-    setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
+  function isStockQtyFractional() {
+    return stockSelectedItem?.isfractional === true
   }
 
-  async function loadStockViewItems(query = stockViewQuery) {
-    if (!cashier || !selectedStore) return
+  function normalizeStockQtyValue(value: string) {
+    if (!isStockQtyFractional()) {
+      return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
+    }
 
-    const currentCashier = cashier
-    const currentStore = selectedStore
+    let cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    const dotIndex = cleaned.indexOf('.')
 
-    setStockViewLoading(true)
+    if (dotIndex !== -1) {
+      cleaned =
+        cleaned.slice(0, dotIndex + 1) +
+        cleaned.slice(dotIndex + 1).replace(/\./g, '')
+    }
+
+    cleaned = cleaned.replace(/^0+(?=\d)/, '')
+
+    return cleaned
+  }
+
+  function setStockQtyDraft(nextValue: string) {
+    const normalized = normalizeStockQtyValue(nextValue)
+    updateStockField('qty_delta', normalized)
+    setStockQtyCaretIndex(normalized.length)
+  }
+
+  function insertStockQtyText(valueToInsert: string) {
+    if (stockLoading || !stockSelectedItem) return
+
+    const isFractional = isStockQtyFractional()
+    const current = String(stockForm.qty_delta || '')
+    const caret = Math.max(0, Math.min(stockQtyCaretIndex, current.length))
+
+    if (!isFractional && valueToInsert === '.') {
+      return
+    }
+
+    if (isFractional && valueToInsert === '.' && current.includes('.')) {
+      return
+    }
+
+    let insertValue = valueToInsert
+
+    if (isFractional && valueToInsert === '.' && current.length === 0) {
+      insertValue = '0.'
+    }
+
+    let next = current.slice(0, caret) + insertValue + current.slice(caret)
+
+    if (current === '0' && valueToInsert !== '.' && caret === 1) {
+      next = valueToInsert
+    }
+
+    next = normalizeStockQtyValue(next)
+
+    const nextCaret = Math.max(0, Math.min(caret + insertValue.length, next.length))
+
+    updateStockField('qty_delta', next)
+    setStockQtyCaretIndex(nextCaret)
+  }
+
+  function appendStockQtyDigit(digit: string) {
+    insertStockQtyText(digit)
+  }
+
+  function appendStockQtyDot() {
+    insertStockQtyText('.')
+  }
+
+  function backspaceStockQtyDraft() {
+    if (stockLoading) return
+
+    const current = String(stockForm.qty_delta || '')
+    const caret = Math.max(0, Math.min(stockQtyCaretIndex, current.length))
+
+    if (caret <= 0) {
+      return
+    }
+
+    const next = current.slice(0, caret - 1) + current.slice(caret)
+
+    updateStockField('qty_delta', next)
+    setStockQtyCaretIndex(caret - 1)
+  }
+
+  function clearStockQtyDraft() {
+    if (stockLoading) return
+
+    updateStockField('qty_delta', '')
+    setStockQtyCaretIndex(0)
+  }
+
+  function changeStockQtyDraft(delta: number) {
+    if (stockLoading || !stockSelectedItem) return
+
+    const current = Number(stockForm.qty_delta || 0)
+    const step = stockSelectedItem.isfractional ? 0.001 : 1
+    const next = Math.max(0, current + delta * step)
+    const nextValue = stockSelectedItem.isfractional
+      ? next.toFixed(3)
+      : String(Math.round(next))
+
+    setStockQtyDraft(nextValue)
+  }
+
+  function changeStockSelectedItem() {
+    setStockSelectedItem(null)
+    setStockForm((prev) => ({
+      ...prev,
+      item: '',
+      qty_delta: '',
+      comment: '',
+    }))
+    setStockQtyDraft('')
+    setStockQtyCaretIndex(0)
+    setStockMessage('Выберите новый товар из текущей выборки или через поиск')
+    window.setTimeout(() => {
+      stockSearchInputRef.current?.focus()
+    }, 0)
+  }
+
+  function resetStockReceiptState() {
+    setStockMessage('')
+    setStockSuccessDialog(null)
+    setStockForm({
+      item: '',
+      qty_delta: '',
+      comment: '',
+    })
+    setStockSelectedItem(null)
+    setStockSearchQuery('')
+    setStockSearchItems([])
+    setStockQtyCaretIndex(0)
+  }
+
+  function openStockReceiptScreen() {
+    resetStockReceiptState()
+    setStockDialogOpen(true)
+    setError('')
+    window.setTimeout(() => {
+      stockSearchInputRef.current?.focus()
+    }, 0)
+  }
+
+  function closeStockReceiptScreen() {
+    setStockDialogOpen(false)
+    resetStockReceiptState()
+    setError('')
+  }
+
+  async function handleStockProductAction() {
+    const normalizedQuery = stockSearchQuery.trim()
+
+    if (!normalizedQuery) {
+      await openItemPicker('stockReceipt')
+      return
+    }
+
+    if (stockSearchItems.length === 1) {
+      selectStockItem(stockSearchItems[0])
+      return
+    }
+
+    if (stockSearchItems.length === 0) {
+      await loadStockSearchItems(normalizedQuery)
+    }
+  }
+
+  async function searchProductsForSelector(query: string, options: { limit?: number; showavailable?: boolean } = {}) {
+    if (!cashier || !selectedStore) return []
+
+    const normalizedQuery = query.trim()
+    const params = buildItemSearchParams(normalizedQuery)
+    const searchParam = getItemSearchParam(normalizedQuery)
+
+    if (searchParam?.key === 'q') {
+      params.set('showavailable', options.showavailable === false ? 'false' : 'true')
+    }
+
+    const queryString = params.toString()
+    const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
+
+    console.debug('[cashier-product-selector-search]', {
+      query: normalizedQuery,
+      searchParam: getItemSearchParam(normalizedQuery),
+      url: searchUrl,
+      store_id: selectedStore.store_id,
+    })
+
+    const res = await apiFetch(searchUrl, {
+      headers: {
+        store_id: String(selectedStore.store_id),
+        'store-id': String(selectedStore.store_id),
+      },
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.detail || 'Не удалось найти товары')
+    }
+
+    const data = await res.json()
+    const goods = extractParitetGoods(data)
+    const mappedItems = goods.map(mapParitetProductToStoreItem)
+
+    return options.limit ? mappedItems.slice(0, options.limit) : mappedItems
+  }
+
+  async function loadProductSelectorResults(query: string, target: 'picker' | 'stockReceipt' | 'stockView' = 'picker') {
+    const setLoading = target === 'picker' ? setItemsLoading : target === 'stockView' ? setStockViewLoading : setStockSearchLoading
+    const setItems = target === 'picker' ? setStoreItems : target === 'stockView' ? setStockViewItems : setStockSearchItems
+
+    setLoading(true)
     setError('')
 
     try {
+      const limit = target === 'picker' ? 100 : target === 'stockView' ? 150 : 30
+      const showavailable = target === 'picker' ? true : false
+      const items = await searchProductsForSelector(query, { limit, showavailable })
+      setItems(items)
+    } catch (e: any) {
+      setItems([])
+      setError(e.message || 'Ошибка поиска товара')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function loadStockSearchItems(query = stockSearchQuery) {
+    await loadProductSelectorResults(query, 'stockReceipt')
+  }
+
+  function getProductKindLabel(item: StoreItem) {
+    return item.isfractional ? `Весовой · ${item.pack || item.unit || 'кг'}` : 'Штучный товар'
+  }
+
+  function selectStockItem(item: StoreItem) {
+    setStockSelectedItem(item)
+    updateStockField('item', String(item.item))
+    setStockQtyCaretIndex(String(stockForm.qty_delta || '').length)
+    setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
+  }
+
+  function resetStockViewWorkState() {
+    setStockViewSelectedItem(null)
+    setStockViewOperation('post')
+    setStockViewQty('')
+    setStockViewComment('')
+    setStockViewQtyCaretIndex(0)
+    setStockViewMessage('')
+    setStockViewSuccessDialog(null)
+    setStockViewItems([])
+  }
+
+  function selectStockViewItem(item: StoreItem) {
+    setStockViewSelectedItem(item)
+    setStockViewQty('')
+    setStockViewComment('')
+    setStockViewQtyCaretIndex(0)
+    setStockViewMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
+  }
+
+  function isStockViewQtyFractional() {
+    return stockViewSelectedItem?.isfractional === true
+  }
+
+  function normalizeStockViewQtyValue(value: string) {
+    if (!isStockViewQtyFractional()) {
+      return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
+    }
+
+    let cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    const dotIndex = cleaned.indexOf('.')
+
+    if (dotIndex !== -1) {
+      cleaned =
+        cleaned.slice(0, dotIndex + 1) +
+        cleaned.slice(dotIndex + 1).replace(/\./g, '')
+    }
+
+    cleaned = cleaned.replace(/^0+(?=\d)/, '')
+
+    return cleaned
+  }
+
+  function setStockViewQtyDraft(nextValue: string) {
+    const normalized = normalizeStockViewQtyValue(nextValue)
+    setStockViewQty(normalized)
+    setStockViewQtyCaretIndex(normalized.length)
+  }
+
+  function insertStockViewQtyText(valueToInsert: string) {
+    if (stockViewLoading || !stockViewSelectedItem) return
+
+    const isFractional = isStockViewQtyFractional()
+    const current = String(stockViewQty || '')
+    const caret = Math.max(0, Math.min(stockViewQtyCaretIndex, current.length))
+
+    if (!isFractional && valueToInsert === '.') {
+      return
+    }
+
+    if (isFractional && valueToInsert === '.' && current.includes('.')) {
+      return
+    }
+
+    let insertValue = valueToInsert
+
+    if (isFractional && valueToInsert === '.' && current.length === 0) {
+      insertValue = '0.'
+    }
+
+    let next = current.slice(0, caret) + insertValue + current.slice(caret)
+
+    if (current === '0' && valueToInsert !== '.' && caret === 1) {
+      next = valueToInsert
+    }
+
+    next = normalizeStockViewQtyValue(next)
+
+    const nextCaret = Math.max(0, Math.min(caret + insertValue.length, next.length))
+
+    setStockViewQty(next)
+    setStockViewQtyCaretIndex(nextCaret)
+  }
+
+  function appendStockViewQtyDigit(digit: string) {
+    insertStockViewQtyText(digit)
+  }
+
+  function appendStockViewQtyDot() {
+    insertStockViewQtyText('.')
+  }
+
+  function backspaceStockViewQtyDraft() {
+    if (stockViewLoading) return
+
+    const current = String(stockViewQty || '')
+    const caret = Math.max(0, Math.min(stockViewQtyCaretIndex, current.length))
+
+    if (caret <= 0) return
+
+    const next = current.slice(0, caret - 1) + current.slice(caret)
+
+    setStockViewQty(next)
+    setStockViewQtyCaretIndex(caret - 1)
+  }
+
+  function clearStockViewQtyDraft() {
+    if (stockViewLoading) return
+
+    setStockViewQty('')
+    setStockViewQtyCaretIndex(0)
+  }
+
+  function changeStockViewQtyDraft(delta: number) {
+    if (stockViewLoading || !stockViewSelectedItem) return
+
+    const isFractional = isStockViewQtyFractional()
+    const step = isFractional ? 0.1 : 1
+    const current = Number(stockViewQty || 0)
+    const next = Math.max(0, current + delta * step)
+    const nextValue = isFractional ? Number(next.toFixed(3)).toString() : String(Math.trunc(next))
+
+    setStockViewQtyDraft(nextValue === '0' ? '' : nextValue)
+  }
+
+  async function handleStockViewProductAction() {
+    const normalizedQuery = stockViewQuery.trim()
+
+    if (!normalizedQuery) {
+      await openItemPicker('stockView')
+      return
+    }
+
+    await searchStockViewItemsFresh(normalizedQuery, { selectSingle: true })
+  }
+
+  async function refreshStockViewSelectedItem(productId: number) {
+    const items = await searchProductsForSelector(String(productId), { limit: 1, showavailable: false })
+    const refreshedItem = items.find((item) => item.item === productId) || items[0]
+
+    if (refreshedItem) {
+      setStockViewSelectedItem(refreshedItem)
+      setStockViewItems((prev) => {
+        if (!prev.some((item) => item.item === refreshedItem.item)) {
+          return [refreshedItem, ...prev]
+        }
+
+        return prev.map((item) => (item.item === refreshedItem.item ? refreshedItem : item))
+      })
+    }
+
+    return refreshedItem || null
+  }
+
+  function validateStockViewOperation() {
+    if (!stockViewSelectedItem) {
+      return 'Сначала выберите товар'
+    }
+
+    const qty = Number(stockViewQty)
+
+    if (!qty || qty <= 0) {
+      return 'Введите количество'
+    }
+
+    if (stockViewOperation === 'writeoff' && qty > toNumber(stockViewSelectedItem.available_qty, 0)) {
+      return 'Нельзя списать больше доступного количества'
+    }
+
+    return ''
+  }
+
+  async function performStockViewOperation() {
+    if (!cashier || !selectedStore || !stockViewSelectedItem) return
+
+    const validationError = validateStockViewOperation()
+
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    const qty = Number(stockViewQty)
+    const operation = stockViewOperation
+
+    setStockViewLoading(true)
+    setError('')
+    setStockViewMessage('')
+
+    try {
       const params = new URLSearchParams({
-        cashier_account: String(currentCashier.cashier_account),
-        store_id: String(currentStore.store_id),
-        limit: '150',
+        product_id: String(stockViewSelectedItem.item),
+        count: String(qty),
+        store_id: String(selectedStore.store_id),
       })
 
-      if (query.trim()) {
-        params.set('q', query.trim())
+      if (stockViewComment.trim()) {
+        params.set('comment', stockViewComment.trim())
       }
 
-      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
+      const action = operation === 'writeoff' ? 'writeoff' : 'post'
+      const res = await apiFetch(`${API_BASE}/cashier/items/goods/${action}?${params.toString()}`, {
+        method: 'POST',
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось загрузить остатки')
+        throw new Error(getErrorMessage(data, operation === 'writeoff' ? 'Не удалось списать товар' : 'Не удалось оприходовать товар'))
       }
 
-      const data = await res.json()
-      setStockViewItems(data.items || [])
+      const itemName = stockViewSelectedItem.item_name
+      const formattedQty = formatQty(qty, stockViewSelectedItem.isfractional)
+      const operationText = operation === 'writeoff' ? 'Списано' : 'Оприходовано'
+
+      setStockViewMessage(`${operationText}: ${itemName} · количество ${formattedQty}`)
+      setStockViewSuccessDialog({
+        itemName,
+        qty: formattedQty,
+        operation,
+      })
+        setStockViewQty('')
+      setStockViewComment('')
+      setStockViewQtyCaretIndex(0)
+
+      await refreshStockViewSelectedItem(stockViewSelectedItem.item)
     } catch (e: any) {
-      setStockViewItems([])
-      setError(e.message || 'Ошибка загрузки остатков')
+      setError(e.message || (operation === 'writeoff' ? 'Ошибка списания товара' : 'Ошибка оприходования товара'))
     } finally {
       setStockViewLoading(false)
     }
   }
 
+  async function searchStockViewItemsFresh(
+    query = stockViewQuery,
+    options: { selectSingle?: boolean } = {}
+  ) {
+    const normalizedQuery = query.trim()
+
+    setStockViewLoading(true)
+    setError('')
+
+    try {
+      const items = await searchProductsForSelector(normalizedQuery, { limit: 150, showavailable: false })
+      setStockViewItems(items)
+
+      if (options.selectSingle && items.length === 1) {
+        selectStockViewItem(items[0])
+      }
+
+      return items
+    } catch (e: any) {
+      setStockViewItems([])
+      setError(e.message || 'Ошибка поиска товара')
+      return []
+    } finally {
+      setStockViewLoading(false)
+    }
+  }
+
+  async function loadStockViewItems(query = stockViewQuery) {
+    return searchStockViewItemsFresh(query)
+  }
+
+
   async function openStockViewDialog() {
     setStockViewDialogOpen(true)
     setStockViewQuery('')
+    resetStockViewWorkState()
     setError('')
     await loadStockViewItems('')
   }
@@ -985,11 +2360,11 @@ function App() {
   async function stockReceipt() {
     if (!cashier || !selectedStore) return
 
-    const itemCode = Number(stockForm.item)
+    const itemCode = Number(stockForm.item || stockSelectedItem?.item || 0)
     const qtyDelta = Number(stockForm.qty_delta)
 
     if (!itemCode || itemCode <= 0) {
-      setError('Введите корректный код товара')
+      setError('Сначала выберите товар')
       return
     }
 
@@ -1003,18 +2378,18 @@ function App() {
     setStockMessage('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/stock/receipt`, {
+      const params = new URLSearchParams({
+        product_id: String(itemCode),
+        count: String(qtyDelta),
+        store_id: String(selectedStore.store_id),
+      })
+
+      if (stockForm.comment.trim()) {
+        params.set('comment', stockForm.comment.trim())
+      }
+
+      const res = await apiFetch(`${API_BASE}/cashier/items/goods/post?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          item: itemCode,
-          qty_delta: qtyDelta,
-          comment: stockForm.comment,
-          session_id: sessionId,
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
@@ -1022,17 +2397,24 @@ function App() {
         throw new Error(data?.detail || 'Не удалось оприходовать товар')
       }
 
-      const data = await res.json()
+      const successItemName = stockSelectedItem?.item_name || `товар ${itemCode}`
+      const successQty = formatQty(qtyDelta, stockSelectedItem?.isfractional)
 
-      setStockMessage(
-        `Оприходовано: ${data.item_name}. Остаток: ${formatQty(data.item_stock_before, data.item_type)} → ${formatQty(data.item_stock_after, data.item_type)}`
-      )
+      setStockMessage(`Оприходовано: ${successItemName} · количество ${successQty}`)
+      setStockSuccessDialog({
+        itemName: successItemName,
+        qty: successQty,
+      })
 
       setStockForm((prev) => ({
         ...prev,
         qty_delta: '',
         comment: '',
       }))
+
+      if (stockSearchQuery.trim()) {
+        await loadStockSearchItems(stockSearchQuery)
+      }
     } catch (e: any) {
       setError(e.message || 'Ошибка прихода товара')
     } finally {
@@ -1057,7 +2439,7 @@ function App() {
         limit: '80',
       })
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/users/${foundUser.user_account}/transactions?${params.toString()}`
       )
 
@@ -1074,6 +2456,71 @@ function App() {
     } finally {
       setTxLoading(false)
     }
+  }
+
+  function getCashOperationAmount() {
+    return Number(String(cashTopupAmount || '').replace(',', '.'))
+  }
+
+  function applyCashBalances(data: any) {
+    const customerbalance = Number(data.customerbalance ?? 0)
+    const cashierbalance = Number(data.cashierbalance ?? 0)
+    const moneyincashbox = Number(data.moneyincashbox ?? 0)
+
+    setFoundUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            balance: customerbalance,
+          }
+        : prev
+    )
+
+    setOwnerBalance(cashierbalance)
+    setCashBalance(moneyincashbox)
+    setStoreState((prev) =>
+      prev
+        ? {
+            ...prev,
+            owner_balance: cashierbalance,
+            cash_balance: moneyincashbox,
+          }
+        : selectedStore
+          ? {
+              store_id: selectedStore.store_id,
+              owner_account: selectedStore.owner_account || 0,
+              owner_balance: cashierbalance,
+              cash_balance: moneyincashbox,
+              cash_limit: 0,
+            }
+          : prev
+    )
+  }
+
+  function showCashSuccess(title: string, text: string, data?: any) {
+    setCashSuccessDialog({
+      title,
+      text,
+      customerbalance: data?.customerbalance,
+      cashierbalance: data?.cashierbalance,
+      moneyincashbox: data?.moneyincashbox,
+    })
+  }
+
+  function validateCashOperationBase() {
+    if (!cashier || !selectedStore || !foundUser) {
+      setError('Сначала найдите пайщика')
+      return null
+    }
+
+    const amount = getCashOperationAmount()
+
+    if (!amount || amount <= 0) {
+      setError('Введите сумму операции')
+      return null
+    }
+
+    return { amount, user: foundUser, store: selectedStore }
   }
 
   function openCashTopupConfirm() {
@@ -1145,70 +2592,42 @@ function App() {
   }, [cashTopupConfirmOpen, cashTopupLoading, cashTopupAmount, foundUser, selectedStore, cashier, sessionId])
 
   async function cashTopup() {
-    if (!cashier || !selectedStore || !foundUser) {
-      setError('Сначала найдите пайщика')
-      return
-    }
+    const base = validateCashOperationBase()
+    if (!base) return
 
-    const amount = Number(cashTopupAmount)
-
-    if (!amount || amount <= 0) {
-      setError('Введите сумму пополнения')
-      return
-    }
+    const { amount, user, store } = base
 
     setCashTopupLoading(true)
     setError('')
+    setCashOperationMessage('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/topup/cash`, {
+      if (!user.user_id) {
+        throw new Error('Не удалось выполнить пополнение: в данных пайщика нет user_id')
+      }
+
+      const params = new URLSearchParams({
+        user_id: String(user.user_id),
+        amount: String(amount),
+        store_id: String(store.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/transfer?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_account: foundUser.user_account,
-          amount,
-          session_id: sessionId,
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось пополнить П/С')
+        throw new Error(getErrorMessage(data, 'Не удалось пополнить П/С'))
       }
 
       const data = await res.json()
 
-      setFoundUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              balance: data.user_balance_after,
-            }
-          : prev
-      )
-
-      setStoreState((prev) =>
-        prev
-          ? {
-              ...prev,
-              owner_balance: data.owner_balance_after,
-              cash_balance: data.cash_balance_after,
-              cash_limit: data.cash_limit,
-            }
-          : {
-              store_id: selectedStore.store_id,
-              owner_account: data.owner_account,
-              owner_balance: data.owner_balance_after,
-              cash_balance: data.cash_balance_after,
-              cash_limit: data.cash_limit,
-            }
-      )
-
+      applyCashBalances(data)
       setCashTopupAmount('')
       setCashTopupConfirmOpen(false)
+      setCashOperationMessage('Пополнение выполнено')
+      showCashSuccess('Пополнение выполнено', 'Деньги зачислены на П/С пайщика.', data)
     } catch (e: any) {
       setError(e.message || 'Ошибка пополнения')
     } finally {
@@ -1222,111 +2641,215 @@ function App() {
       return
     }
 
-    setError('')
-    setSearchLoading(true)
+    const userId = Number(foundUser.user_id || 0)
 
-    try {
-      const res = await fetch(`${API_BASE}/cashier/orders/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_account: foundUser.user_account,
-          session_id: sessionId,
-          device_id: 'web',
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось создать заказ')
-      }
-
-      const data = await res.json()
-      const newOrder = data.order as FoundOrder
-
-      setOrders((prev) => [newOrder, ...prev])
-      setSelectedOrderNumber(newOrder.order_number)
-      await refreshCurrentUser(newOrder.order_number)
-    } catch (e: any) {
-      setError(e.message || 'Ошибка создания заказа')
-    } finally {
-      setSearchLoading(false)
-    }
-  }
-
-  async function deleteOrderFromList(order: FoundOrder) {
-    if (!cashier || !selectedStore) return
-
-    if (order.status !== 'in_progress') {
-      setError('Удалить можно только заказ в статусе Передан на выполнение')
+    if (!userId) {
+      setError('Не удалось создать заказ: в данных пайщика нет user_id')
       return
     }
 
-
     setError('')
-    setSearchLoading(true)
+    setSelectedOrderNumber(0)
+    setOrderDetails(createLocalNewOrderDetails(foundUser, selectedStore))
+    setQuickItemCode('')
+    setQuickItemMatches([])
+    setQuickItemDropdownOpen(false)
+    setItemPickerOpen(false)
+  }
+
+  function handleOrderPointerDown(e: any, order: FoundOrder) {
+    if (!isOrderCancelable(order) || cancelOrderLoading) return
+
+    orderSwipeRef.current = {
+      orderNumber: order.order_number,
+      startX: e.clientX,
+      startY: e.clientY,
+    }
+
+    setOrderSwipeDragNumber(order.order_number)
+    setOrderSwipeDragX(0)
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/orders/${order.order_number}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          session_id: sessionId,
-          device_id: 'web',
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось удалить заказ')
-      }
-
-      setOrders((prev) => prev.filter((o) => o.order_number !== order.order_number))
-
-      if (selectedOrderNumber === order.order_number) {
-        setSelectedOrderNumber(null)
-      }
-
-      await refreshCurrentUser(null)
-    } catch (e: any) {
-      setError(e.message || 'Ошибка удаления заказа')
-    } finally {
-      setSearchLoading(false)
-      setDeleteOrderDialog(null)
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+    } catch {
+      // Pointer capture может быть недоступен на части браузеров.
     }
   }
 
-  async function openOrder(orderNumber: number) {
-    if (!cashier || !selectedStore) return
+  function handleOrderPointerMove(e: any, order: FoundOrder) {
+    const swipe = orderSwipeRef.current
 
+    if (!swipe || swipe.orderNumber !== order.order_number) {
+      return
+    }
+
+    const deltaX = e.clientX - swipe.startX
+    const deltaY = e.clientY - swipe.startY
+
+    if (Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      setOrderSwipeDragNumber(null)
+      setOrderSwipeDragX(0)
+      orderSwipeRef.current = null
+      return
+    }
+
+    const nextX = Math.max(-170, Math.min(deltaX, 170))
+    setOrderSwipeDragX(nextX)
+
+    if (Math.abs(nextX) > 8) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+
+  function handleOrderPointerUp(e: any, order: FoundOrder) {
+    const swipe = orderSwipeRef.current
+
+    if (!swipe || swipe.orderNumber !== order.order_number) {
+      setOrderSwipeDragNumber(null)
+      setOrderSwipeDragX(0)
+      orderSwipeRef.current = null
+      return
+    }
+
+    const deltaX = e.clientX - swipe.startX
+    const deltaY = e.clientY - swipe.startY
+
+    orderSwipeRef.current = null
+
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId)
+    } catch {
+      // Не критично.
+    }
+
+    if (Math.abs(deltaX) > 95 && Math.abs(deltaY) < 65) {
+      e.preventDefault()
+      e.stopPropagation()
+      swipedOrderNumberRef.current = order.order_number
+      setOrderSwipeDragNumber(null)
+      setOrderSwipeDragX(0)
+      setDeleteOrderDialog(order)
+      return
+    }
+
+    setOrderSwipeDragNumber(null)
+    setOrderSwipeDragX(0)
+  }
+
+  function handleOrderPointerCancel() {
+    orderSwipeRef.current = null
+    setOrderSwipeDragNumber(null)
+    setOrderSwipeDragX(0)
+  }
+
+  function handleOrderCardClick(order: FoundOrder) {
+    if (swipedOrderNumberRef.current === order.order_number) {
+      swipedOrderNumberRef.current = null
+      return
+    }
+
+    openOrder(order.order_number)
+  }
+
+  async function cancelOrder(orderNumber: number) {
+    if (!cashier || !selectedStore) return null
+
+    const params = new URLSearchParams({
+      store_id: String(selectedStore.store_id),
+    })
+
+    const res = await apiFetch(
+      `${API_BASE}/cashier/orders/${orderNumber}/cancel?${params.toString()}`,
+      { method: 'POST' }
+    )
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось отменить заказ'))
+    }
+
+    return res.json()
+  }
+
+  async function handleCancelOrder(orderNumber: number) {
+    setError('')
+    setCancelOrderLoading(true)
+
+    try {
+      await cancelOrder(orderNumber)
+
+      if (selectedOrderNumber === orderNumber) {
+        setSelectedOrderNumber(null)
+        setOrderDetails(null)
+      }
+
+      await searchOrders(null)
+      setDeleteOrderDialog(null)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка отмены заказа')
+    } finally {
+      setCancelOrderLoading(false)
+    }
+  }
+
+  
+async function fetchStatus() {
+  if (!selectedStore) return
+
+  try {
+    const params = new URLSearchParams({
+      store_id: String(selectedStore.store_id),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/status?${params.toString()}`)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.detail || 'Не удалось получить статус')
+    }
+
+    const data = await res.json()
+
+    setOwnerBalance(Number(data.owner_balance || 0))
+    setCashBalance(Number(data.cash_balance || 0))
+  } catch (e) {
+    console.error('Ошибка получения статуса', e)
+  }
+}
+
+useEffect(() => {
+  if (selectedStore) {
+    fetchStatus()
+  }
+}, [selectedStore])
+
+async function openOrder(orderNumber: number, userForBalance: FoundUser | null = foundUser) {
+    if (!cashier || !selectedStore || !foundUser) return
+  
     setError('')
     setOrderLoading(true)
     setSelectedOrderNumber(orderNumber)
-
+  
     try {
       const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
+        cashier_account: String(cashier.cashier_account ?? ''),
         store_id: String(selectedStore.store_id),
-        session_id: sessionId,
         device_id: 'web',
       })
-
-      const res = await fetch(`${API_BASE}/cashier/orders/${orderNumber}?${params.toString()}`)
-
+  
+      const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}?${params.toString()}`)
+  
       if (!res.ok) {
         const data = await res.json().catch(() => null)
         throw new Error(data?.detail || 'Не удалось открыть заказ')
       }
+  
+      const data = await res.json()
+      const normalizedData = mapParitetOrderToFrontResponse(data, userForBalance || foundUser, selectedStore)
 
-      const data: OrderDetailsResponse = await res.json()
-      setOrderDetails({
-        ...data,
-        lines: (data.lines || []).filter((line) => Number(line.qty_final || 0) > 0),
-      })
+      setOrderDetails(normalizedData)
+  
     } catch (e: any) {
       setError(e.message || 'Ошибка открытия заказа')
     } finally {
@@ -1354,7 +2877,7 @@ function App() {
         store_id: String(selectedStore.store_id),
       })
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/cashier/orders/${targetOrderNumber}/receipt?${params.toString()}`
       )
 
@@ -1377,15 +2900,17 @@ function App() {
     if (cashier && orderDetails && orderDetails.order.status === 'in_progress') {
       const params = new URLSearchParams({
         cashier_account: String(cashier.cashier_account),
-        session_id: sessionId,
         device_id: 'web',
       })
 
-      await fetch(
+      await apiFetch(
         `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/unlock?${params.toString()}`,
         { method: 'POST' }
       ).catch(() => null)
     }
+
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentMessage('')
 
     const keepOrderNumber = orderDetails?.order.order_number ?? null
     setOrderDetails(null)
@@ -1402,17 +2927,17 @@ function App() {
 
     const params = new URLSearchParams({
       cashier_account: String(currentCashier.cashier_account),
-      session_id: sessionId,
       device_id: 'web',
     })
 
-    await fetch(
+    await apiFetch(
       `${API_BASE}/cashier/orders/${currentOrderDetails.order.order_number}/unlock?${params.toString()}`,
       { method: 'POST' }
     ).catch(() => null)
   }
 
   function clearWorkplaceState() {
+    clearStoredStoreId()
     setSelectedStore(null)
     setSearchQuery('')
     setFoundUser(null)
@@ -1438,6 +2963,8 @@ function App() {
     setSbpDialogOpen(false)
     setSbpAmount('')
     setSbpMessage('')
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentMessage('')
 
     setNewUserDialogOpen(false)
     setNewUserForm({
@@ -1452,17 +2979,20 @@ function App() {
 
     setStockDialogOpen(false)
     setStockMessage('')
+    setStockSuccessDialog(null)
     setStockForm({
       item: '',
       qty_delta: '',
       comment: '',
     })
+    setStockSelectedItem(null)
     setStockSearchQuery('')
     setStockSearchItems([])
 
     setStockViewDialogOpen(false)
     setStockViewQuery('')
     setStockViewItems([])
+    resetStockViewWorkState()
   }
 
   async function switchStore() {
@@ -1474,6 +3004,10 @@ function App() {
     await unlockCurrentOrderIfNeeded()
     clearWorkplaceState()
 
+    clearStoredSessionId()
+    clearStoredCashier()
+    clearStoredStores()
+
     setCashier(null)
     setStores([])
     setSessionId('')
@@ -1481,21 +3015,45 @@ function App() {
   }
 
   async function saveOrder() {
-    if (!cashier || !selectedStore || !orderDetails) return
+    if (!cashier || !selectedStore || !orderDetails || !foundUser) return
+
+    const userId = Number(foundUser.user_id || 0)
+
+    if (!userId) {
+      setError('Не удалось сохранить заказ: в данных пайщика нет user_id')
+      return
+    }
+
+    const payloadLines = (orderDetails.lines || []).map((line) => ({
+      item: line.item,
+      qty_final: Number(line.qty_final || 0),
+    }))
+
+    if (!payloadLines.length) {
+      setError('Не удалось сохранить заказ: нет строк заказа')
+      return
+    }
+
+    const balanceBeforeSave = toNumber(orderDetails.order.user_balance ?? foundUser.balance, 0)
 
     setSaveLoading(true)
     setError('')
 
     try {
-      const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/save`,
+      const currentOrderNumber = Number(orderDetails.order.order_number || 0)
+
+      const res = await apiFetch(
+        `${API_BASE}/cashier/orders/${currentOrderNumber}/save`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
+            // Backend save endpoint currently requires an int, but Paritet save logic does not use it.
+            // /cashier/search may return cashier.cashier_account = null, so keep payload valid.
+            cashier_account: toSafeInt(cashier.cashier_account, 0),
             store_id: selectedStore.store_id,
-            session_id: sessionId,
+            user_id: userId,
+            lines: payloadLines,
             device_id: 'web',
           }),
         }
@@ -1503,26 +3061,32 @@ function App() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось сохранить заказ')
+        throw new Error(getErrorMessage(data, 'Не удалось сохранить заказ'))
       }
 
       const saved = await res.json()
+      const savedOrderNumber = Number(saved?.order_number || saved?.order?.order_number || currentOrderNumber)
 
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.order_number === saved.order_number
-            ? {
-                ...o,
-                status: saved.status,
-                status_label: saved.status_label,
-                order_sum: saved.order_sum,
-              }
-            : o
-        )
-      )
+      if (!savedOrderNumber) {
+        throw new Error('Заказ сохранён, но сервер не вернул номер заказа')
+      }
 
-      setOrderDetails(null)
-      await refreshCurrentUser(saved.order_number)
+      setSelectedOrderNumber(savedOrderNumber)
+
+      const refreshed = await refreshCurrentUser(savedOrderNumber, {
+        preserveUserBalance: balanceBeforeSave,
+      })
+      const freshUser = refreshed?.user
+        ? {
+            ...refreshed.user,
+            balance: balanceBeforeSave,
+          }
+        : {
+            ...foundUser,
+            balance: balanceBeforeSave,
+          }
+
+      await openOrder(savedOrderNumber, freshUser)
     } catch (e: any) {
       setError(e.message || 'Ошибка сохранения заказа')
     } finally {
@@ -1532,112 +3096,264 @@ function App() {
 
   async function loadStoreItems(
     query = itemSearchQuery,
-    category = selectedItemCategory,
-    subcategory = selectedItemSubcategory
+    _category = selectedItemCategory,
+    _subcategory = selectedItemSubcategory
   ) {
-    if (!cashier || !selectedStore) return
-
-    setItemsLoading(true)
-    setError('')
-
-    try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-        limit: '100',
-      })
-
-      if (query.trim()) {
-        params.set('q', query.trim())
-      }
-
-      if (category.trim()) {
-        params.set('category', category.trim())
-      }
-
-      if (subcategory.trim()) {
-        params.set('subcategory', subcategory.trim())
-      }
-
-      const res = await fetch(`${API_BASE}/cashier/items?${params.toString()}`)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось загрузить товары')
-      }
-
-      const data = await res.json()
-      setStoreItems(data.items || [])
-    } catch (e: any) {
-      setStoreItems([])
-      setError(e.message || 'Ошибка загрузки товаров')
-    } finally {
-      setItemsLoading(false)
-    }
+    await loadProductSelectorResults(query, 'picker')
+    setItemCategories([])
   }
 
-  async function loadItemCategories() {
-    if (!cashier || !selectedStore) return
-
-    try {
-      const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
-        store_id: String(selectedStore.store_id),
-      })
-
-      const res = await fetch(`${API_BASE}/cashier/items/categories?${params.toString()}`)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось загрузить категории')
-      }
-
-      const data = await res.json()
-      setItemCategories(data.categories || [])
-    } catch (e: any) {
-      setItemCategories([])
-      setError(e.message || 'Ошибка загрузки категорий')
-    }
-  }
-
-  async function openItemPicker() {
+  async function openItemPicker(mode: 'order' | 'stockReceipt' | 'stockView' = 'order') {
+    setItemPickerMode(mode)
     setItemPickerOpen(true)
     setItemSearchQuery('')
     setSelectedItemCategory('')
     setSelectedItemSubcategory('')
-    await loadItemCategories()
+    setStoreItems([])
+    setItemCategories([])
     await loadStoreItems('', '', '')
   }
 
-  async function addItemToCurrentOrder(item: StoreItem) {
+  useEffect(() => {
+    if (!itemPickerOpen) return
+
+    const timer = window.setTimeout(() => {
+      void loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [itemPickerOpen, itemSearchQuery, selectedItemCategory, selectedItemSubcategory])
+
+
+  async function handleProductSelectedFromPicker(item: StoreItem) {
+    if (itemPickerMode === 'stockReceipt') {
+      selectStockItem(item)
+      setItemPickerOpen(false)
+      return
+    }
+
+    if (itemPickerMode === 'stockView') {
+      selectStockViewItem(item)
+      setItemPickerOpen(false)
+      return
+    }
+
+    await addItemToCurrentOrder(item)
+  }
+
+  function updateOrderLinesLocally(updater: (lines: OrderLine[]) => OrderLine[]) {
+    setOrderDetails((prev) => {
+      if (!prev) return prev
+
+      const nextLines = updater(prev.lines || [])
+      const nextOrderSum = nextLines
+        .filter((line) => Number(line.qty_final || 0) > 0)
+        .reduce((sum, line) => sum + toNumber(line.line_sum, 0), 0)
+
+      return {
+        ...prev,
+        order: {
+          ...prev.order,
+          order_sum: nextOrderSum,
+        },
+        lines: nextLines,
+      }
+    })
+  }
+
+  async function searchQuickItems(query: string) {
     if (!cashier || !selectedStore || !orderDetails) return
+
+    const normalizedQuery = query.trim()
+
+    if (!normalizedQuery) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    // Для текстового поиска не дергаем backend на одном символе. Для числового ID/ШК можно искать сразу.
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    setQuickItemSearchLoading(true)
+
+    try {
+      const params = buildItemSearchParams(normalizedQuery)
+      const searchParam = getItemSearchParam(normalizedQuery)
+
+      if (searchParam?.key === 'q') {
+        params.set('showavailable', 'true')
+      }
+
+      const queryString = params.toString()
+      const searchUrl = `${API_BASE}/cashier/items/search${queryString ? `?${queryString}` : ''}`
+
+      console.debug('[cashier-quick-item-search]', {
+        query: normalizedQuery,
+        searchParam: getItemSearchParam(normalizedQuery),
+        url: searchUrl,
+        store_id: selectedStore.store_id,
+      })
+
+      const res = await apiFetch(searchUrl, {
+        headers: {
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось найти товар')
+      }
+
+      const data = await res.json()
+      const goods = extractParitetGoods(data)
+      const mappedItems = goods.map(mapParitetProductToStoreItem)
+
+      setQuickItemMatches(mappedItems)
+      setQuickItemDropdownOpen(mappedItems.length > 0)
+    } catch (e: any) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      setError(e.message || 'Ошибка поиска товара')
+    } finally {
+      setQuickItemSearchLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!orderDetails || orderDetails.readonly) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    const normalizedQuery = quickItemCode.trim()
+
+    if (!normalizedQuery) {
+      setQuickItemMatches([])
+      setQuickItemDropdownOpen(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void searchQuickItems(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [quickItemCode, selectedStore?.store_id, orderDetails?.order.order_number, orderDetails?.readonly])
+
+
+  useEffect(() => {
+    if (!stockDialogOpen) {
+      return
+    }
+
+    const normalizedQuery = stockSearchQuery.trim()
+
+    if (!normalizedQuery) {
+      setStockSearchItems([])
+      return
+    }
+
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setStockSearchItems([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadStockSearchItems(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [stockDialogOpen, stockSearchQuery, selectedStore?.store_id])
+
+  useEffect(() => {
+    if (!stockViewDialogOpen) {
+      return
+    }
+
+    const normalizedQuery = stockViewQuery.trim()
+
+    if (!normalizedQuery) {
+      setStockViewItems([])
+      return
+    }
+
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setStockViewItems([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void searchStockViewItemsFresh(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [stockViewDialogOpen, stockViewQuery, selectedStore?.store_id])
+
+  async function addQuickItemToCurrentOrder(item: StoreItem) {
+    await addItemToCurrentOrder(item, { keepSearchOpen: false })
+    setQuickItemCode('')
+    setQuickItemMatches([])
+    setQuickItemDropdownOpen(false)
+  }
+
+  async function addItemToCurrentOrder(item: StoreItem, options: { keepSearchOpen?: boolean } = {}) {
+    if (!orderDetails) return
 
     setItemsLoading(true)
     setError('')
 
     try {
-      const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            item: item.item,
-            session_id: sessionId,
-            device_id: 'web',
-          }),
+      updateOrderLinesLocally((lines) => {
+        const activeIndex = lines.findIndex(
+          (line) =>
+            (line.item === item.item || line.good_id === item.item) &&
+            toNumber(line.qty_final, 0) > 0
+        )
+
+        if (activeIndex >= 0) {
+          return lines.map((line, index) => {
+            if (index !== activeIndex) return line
+
+            const step = 1
+            const nextQty = toNumber(line.qty_final, 0) + step
+            return recalcOrderLine(line, nextQty)
+          })
         }
-      )
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось добавить товар')
+        const deletedIndex = lines.findIndex(
+          (line) =>
+            (line.item === item.item || line.good_id === item.item) &&
+            toNumber(line.qty_final, 0) <= 0
+        )
+
+        if (deletedIndex >= 0) {
+          return lines.map((line, index) =>
+            index === deletedIndex ? mapStoreItemToOrderLine(item) : line
+          )
+        }
+
+        return [...lines, mapStoreItemToOrderLine(item)]
+      })
+
+      if (options.keepSearchOpen !== false) {
+        await loadStoreItems(itemSearchQuery)
       }
-
-      await openOrder(orderDetails.order.order_number)
-      await loadStoreItems(itemSearchQuery)
     } catch (e: any) {
       setError(e.message || 'Ошибка добавления товара')
     } finally {
@@ -1645,56 +3361,18 @@ function App() {
     }
   }
 
-  async function addItemByCode() {
-    if (!cashier || !selectedStore || !orderDetails) return
-
-    const itemCode = Number(quickItemCode.trim())
-
-    if (!itemCode || itemCode <= 0) {
-      setError('Введите корректный код товара')
+  async function handleAddButton() {
+    if (quickItemCode.trim()) {
+      setQuickItemDropdownOpen(true)
+      if (quickItemMatches.length === 1 && /^\d+$/.test(quickItemCode.trim())) {
+        await addQuickItemToCurrentOrder(quickItemMatches[0])
+      } else if (quickItemMatches.length === 0) {
+        await searchQuickItems(quickItemCode)
+      }
       return
     }
 
-    setItemsLoading(true)
-    setError('')
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/items/add`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            item: itemCode,
-            session_id: sessionId,
-            device_id: 'web',
-          }),
-        }
-      )
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось добавить товар по коду')
-      }
-
-      const orderNumber = orderDetails.order.order_number
-      setQuickItemCode('')
-      await openOrder(orderNumber)
-    } catch (e: any) {
-      setError(e.message || 'Ошибка добавления товара по коду')
-    } finally {
-      setItemsLoading(false)
-    }
-  }
-
-  async function handleAddButton() {
-    if (quickItemCode.trim()) {
-      await addItemByCode()
-    } else {
-      await openItemPicker()
-    }
+    await openItemPicker('order')
   }
 
   function openQtyDialog(line: OrderLine) {
@@ -1716,13 +3394,13 @@ function App() {
     if (!orderDetails || orderDetails.readonly || deleteLineConfirmOpen) return
 
     lineSwipeRef.current = {
-      lineId: line.order_line_id,
+      lineId: getOrderLineUiId(line),
       startX: e.clientX,
       startY: e.clientY,
     }
 
     setSwipeAnimatingLineId(null)
-    setSwipeDragLineId(line.order_line_id)
+    setSwipeDragLineId(getOrderLineUiId(line))
     setSwipeDragX(0)
 
     try {
@@ -1735,7 +3413,7 @@ function App() {
   function handleLinePointerMove(e: any, line: OrderLine) {
     const swipe = lineSwipeRef.current
 
-    if (!swipe || swipe.lineId !== line.order_line_id) {
+    if (!swipe || swipe.lineId !== getOrderLineUiId(line)) {
       return
     }
 
@@ -1761,7 +3439,7 @@ function App() {
   function handleLinePointerUp(e: any, line: OrderLine) {
     const swipe = lineSwipeRef.current
 
-    if (!swipe || swipe.lineId !== line.order_line_id) {
+    if (!swipe || swipe.lineId !== getOrderLineUiId(line)) {
       setSwipeDragLineId(null)
       setSwipeDragX(0)
       lineSwipeRef.current = null
@@ -1785,11 +3463,11 @@ function App() {
 
       const commitX = Math.max(0, Math.min(deltaX, 220))
 
-      swipedLineIdRef.current = line.order_line_id
+      swipedLineIdRef.current = getOrderLineUiId(line)
       setSwipeCommitX(commitX)
       setSwipeDragLineId(null)
       setSwipeDragX(0)
-      setSwipeAnimatingLineId(line.order_line_id)
+      setSwipeAnimatingLineId(getOrderLineUiId(line))
 
       window.setTimeout(() => {
         setSwipeAnimatingLineId(null)
@@ -1814,7 +3492,7 @@ function App() {
   }
 
   function handleLineRowClick(line: OrderLine) {
-    if (swipedLineIdRef.current === line.order_line_id) {
+    if (swipedLineIdRef.current === getOrderLineUiId(line)) {
       swipedLineIdRef.current = null
       return
     }
@@ -1830,12 +3508,12 @@ function App() {
     if (!qtyDialogLine) return
 
     const current = Number(qtyDraft || 0)
-    const step = qtyDialogLine.item_type === 'piece' ? 1 : 0.001
+    const step = qtyDialogLine.isfractional ? 0.001 : 1
     const next = Math.max(0, current + delta * step)
 
-    const nextValue = qtyDialogLine.item_type === 'piece'
-      ? String(Math.round(next))
-      : next.toFixed(3)
+    const nextValue = qtyDialogLine.isfractional
+      ? next.toFixed(3)
+      : String(Math.round(next))
 
     setQtyDraft(nextValue)
     setQtyCaretIndex(nextValue.length)
@@ -1844,7 +3522,7 @@ function App() {
   function normalizeQtyValue(value: string) {
     if (!qtyDialogLine) return value
 
-    if (qtyDialogLine.item_type === 'piece') {
+    if (!qtyDialogLine.isfractional) {
       return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || ''
     }
 
@@ -1868,17 +3546,17 @@ function App() {
     const current = String(qtyDraft || '')
     const caret = Math.max(0, Math.min(qtyCaretIndex, current.length))
 
-    if (qtyDialogLine.item_type === 'piece' && valueToInsert === '.') {
+    if (!qtyDialogLine.isfractional && valueToInsert === '.') {
       return
     }
 
-    if (qtyDialogLine.item_type === 'weight' && valueToInsert === '.' && current.includes('.')) {
+    if (qtyDialogLine.isfractional && valueToInsert === '.' && current.includes('.')) {
       return
     }
 
     let insertValue = valueToInsert
 
-    if (qtyDialogLine.item_type === 'weight' && valueToInsert === '.' && current.length === 0) {
+    if (qtyDialogLine.isfractional && valueToInsert === '.' && current.length === 0) {
       insertValue = '0.'
     }
 
@@ -1928,7 +3606,7 @@ function App() {
   }
 
   async function saveQtyDraft() {
-    if (!cashier || !selectedStore || !orderDetails || !qtyDialogLine) return
+    if (!orderDetails || !qtyDialogLine) return
 
     const nextQty = Number(qtyDraft)
 
@@ -1941,57 +3619,18 @@ function App() {
     setError('')
 
     try {
-      const orderNumber = orderDetails.order.order_number
+      const targetLineId = getOrderLineUiId(qtyDialogLine)
 
-      if (nextQty <= 0) {
-        const res = await fetch(
-          `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/delete`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              cashier_account: cashier.cashier_account,
-              store_id: selectedStore.store_id,
-              session_id: sessionId,
-              device_id: 'web',
-            }),
-          }
+      updateOrderLinesLocally((lines) =>
+        lines.map((line) =>
+          getOrderLineUiId(line) === targetLineId
+            ? recalcOrderLine(line, nextQty)
+            : line
         )
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => null)
-          throw new Error(data?.detail || 'Не удалось удалить товар')
-        }
-
-        setQtyDialogLine(null)
-        setQtyDraft('')
-        await openOrder(orderNumber)
-        return
-      }
-
-      const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderNumber}/lines/${qtyDialogLine.order_line_id}/qty`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            qty_final: nextQty,
-            session_id: sessionId,
-            device_id: 'web',
-          }),
-        }
       )
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось изменить количество')
-      }
 
       setQtyDialogLine(null)
       setQtyDraft('')
-      await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка изменения количества')
     } finally {
@@ -2014,40 +3653,27 @@ function App() {
   async function deleteQtyLine(lineArg?: OrderLine | null) {
     const lineToDelete = lineArg || deleteLineDialogLine || qtyDialogLine
 
-    if (!cashier || !selectedStore || !orderDetails || !lineToDelete) return
+    if (!orderDetails || !lineToDelete) return
 
     setQtySaving(true)
     setError('')
 
     try {
-      const orderNumber = orderDetails.order.order_number
+      const targetLineId = getOrderLineUiId(lineToDelete)
 
-      const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderNumber}/lines/${lineToDelete.order_line_id}/delete`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            session_id: sessionId,
-            device_id: 'web',
-          }),
-        }
+      updateOrderLinesLocally((lines) =>
+        lines.map((line) =>
+          getOrderLineUiId(line) === targetLineId
+            ? recalcOrderLine(line, 0)
+            : line
+        )
       )
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось удалить товар')
-      }
 
       setDeleteLineConfirmOpen(false)
       setDeleteLineDialogLine(null)
       setSwipeAnimatingLineId(null)
       setQtyDialogLine(null)
       setQtyDraft('')
-
-      await openOrder(orderNumber)
     } catch (e: any) {
       setError(e.message || 'Ошибка удаления товара')
     } finally {
@@ -2055,72 +3681,198 @@ function App() {
     }
   }
 
-  async function payOrder() {
-    if (!cashier || !selectedStore || !orderDetails) return
+  async function generateOrderPaymentQr(orderNumber: number, amount: number, oldBalance: number) {
+    if (!selectedStore || !foundUser) return
 
-    if (!confirm('Оплатить заказ и перевести его в статус Выполнен?')) return
+    const userId = Number(foundUser.user_id || 0)
+    if (!userId) {
+      throw new Error('Не удалось сформировать QR: в данных пайщика нет user_id')
+    }
 
-    setPayLoading(true)
-    setError('')
+    const normalizedAmount = Number(amount.toFixed(2))
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      throw new Error('Не удалось сформировать QR: некорректная сумма пополнения')
+    }
+
+    setOrderPaymentQrLoading(true)
+    setOrderPaymentMessage('')
 
     try {
-      const res = await fetch(
-        `${API_BASE}/cashier/orders/${orderDetails.order.order_number}/pay`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cashier_account: cashier.cashier_account,
-            store_id: selectedStore.store_id,
-            session_id: sessionId,
-            device_id: 'web',
-          }),
-        }
-      )
+      const params = new URLSearchParams({
+        store_id: String(selectedStore.store_id),
+        user_id: String(userId),
+        amount: String(normalizedAmount),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}/pay?${params.toString()}`, {
+        method: 'POST',
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось оплатить заказ')
+        throw new Error(getErrorMessage(data, 'Не удалось сформировать QR пополнения'))
       }
 
-      const paid = await res.json()
+      const data = await res.json()
+      const qrBase64 = String(data.qr_base64 || '')
 
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.order_number === paid.order_number
-            ? {
-                ...o,
-                status: 'done',
-                status_label: 'Выполнен',
-                order_sum: paid.amount,
-                date_updated: new Date().toISOString(),
-              }
-            : o
-        )
-      )
+      if (!qrBase64) {
+        throw new Error('Сервер не вернул QR-картинку')
+      }
 
-      await refreshCurrentUser(paid.order_number)
-      await openOrder(orderDetails.order.order_number)
+      setOrderPaymentQrDialog({
+        order_number: orderNumber,
+        amount: Number(data.amount || normalizedAmount),
+        old_balance: oldBalance,
+        qr_base64: qrBase64,
+        image_type: String(data.image_type || 'image/png'),
+        qr_url: data.qr_url || null,
+        ttl: Number(data.ttl || 15),
+        created_at: Date.now(),
+      })
+    } finally {
+      setOrderPaymentQrLoading(false)
+    }
+  }
+
+  async function doneOrder(orderNumber: number) {
+    if (!selectedStore) return
+
+    const params = new URLSearchParams({
+      store_id: String(selectedStore.store_id),
+    })
+
+    const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}/done?${params.toString()}`, {
+      method: 'POST',
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(getErrorMessage(data, 'Не удалось провести заказ'))
+    }
+
+    const data = await res.json()
+
+    if (!data?.ok) {
+      throw new Error(data?.error || 'Не удалось провести заказ')
+    }
+
+    return data
+  }
+
+  async function payOrder() {
+    if (!cashier || !selectedStore || !orderDetails || !foundUser) return
+
+    const orderNumber = Number(orderDetails.order.order_number || 0)
+
+    if (!orderNumber) {
+      setError('Сначала сохраните новый заказ')
+      return
+    }
+
+    if (getOrderHasUnsavedChanges(orderDetails)) {
+      setError('Сначала сохраните изменения заказа')
+      return
+    }
+
+    const orderSum = Number(orderDetails.order.order_sum || 0)
+
+    if (!Number.isFinite(orderSum) || orderSum <= 0) {
+      setError('Некорректная сумма заказа')
+      return
+    }
+
+    setPayLoading(true)
+    setError('')
+    setOrderPaymentMessage('')
+
+    try {
+      const searchData = await fetchCurrentShareholderData(foundUser.user_account)
+      applySearchResponse(searchData, orderNumber)
+
+      const freshBalance = Number(searchData.user.balance || 0)
+
+      if (freshBalance >= orderSum) {
+        try {
+          await doneOrder(orderNumber)
+        } catch (doneError: any) {
+          const message = doneError?.message || 'Не удалось провести заказ'
+
+          if (isInsufficientFundsError(message)) {
+            await generateOrderPaymentQr(orderNumber, orderSum, freshBalance)
+            setOrderPaymentMessage(message)
+            return
+          }
+
+          throw doneError
+        }
+
+        await refreshCurrentUser(null, { updateCashierStatus: false })
+        await fetchStatus()
+		setOrderPaymentQrDialog(null)
+        setOrderDetails(null)
+        setSelectedOrderNumber(null)
+        setOrderPaymentMessage('Заказ оплачен')
+        return
+      }
+
+      await generateOrderPaymentQr(orderNumber, orderSum, freshBalance)
     } catch (e: any) {
       const message = e.message || 'Ошибка оплаты заказа'
 
-      if (message.includes('Недостаточно паев') && orderDetails) {
-        const deficit = Math.max(
-          0,
-          Number(orderDetails.order.order_sum || 0) - Number(orderDetails.order.user_balance || 0)
-        )
-
-        setSbpAmount(deficit.toFixed(2))
-        setSbpMessage(message)
-        setSbpDialogOpen(true)
+      if (isInsufficientFundsError(message)) {
+        setOrderPaymentMessage(message)
+      } else {
+        setError(message)
       }
-
-      setError(message)
     } finally {
       setPayLoading(false)
     }
   }
 
+
+  function closeOrderPaymentQrDialog() {
+    setOrderPaymentQrDialog(null)
+    setOrderPaymentQrLoading(false)
+  }
+
+  useEffect(() => {
+    if (!orderPaymentQrDialog || !foundUser) return
+
+    const ttlMs = Math.max(1, Number(orderPaymentQrDialog.ttl || 15)) * 60 * 1000
+    let stopped = false
+
+    const pollBalance = async () => {
+      if (stopped || !orderPaymentQrDialog || !foundUser) return
+
+      const elapsed = Date.now() - orderPaymentQrDialog.created_at
+      if (elapsed >= ttlMs) {
+        setOrderPaymentQrDialog(null)
+        setOrderPaymentMessage('Время действия QR истекло. При необходимости сформируйте новый QR.')
+        return
+      }
+
+      try {
+        const data = await fetchCurrentShareholderData(foundUser.user_account)
+        applySearchResponse(data, orderPaymentQrDialog.order_number)
+
+        const newBalance = Number(data.user.balance || 0)
+        if (newBalance > Number(orderPaymentQrDialog.old_balance || 0)) {
+          setOrderPaymentQrDialog(null)
+          setOrderPaymentMessage('Баланс покупателя обновлён. Можно повторно нажать «Оплатить».')
+        }
+      } catch (e) {
+        console.error('Ошибка проверки баланса покупателя по QR', e)
+      }
+    }
+
+    const timer = window.setInterval(pollBalance, 30000)
+
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [orderPaymentQrDialog, foundUser?.user_account, cashier, selectedStore])
 
   function appendSbpAmountValue(value: string) {
     setSbpAmount((current) => {
@@ -2180,65 +3932,234 @@ function App() {
   }, [sbpDialogOpen, screenProfile])
 
   async function sbpTopupStub() {
-    if (!cashier || !selectedStore) return
+    await openCashQrTopup()
+  }
 
-    const targetUserAccount = orderDetails?.order.user_account ?? foundUser?.user_account
+  async function openCashQrTopup() {
+    const base = validateCashOperationBase()
+    if (!base) return
 
-    if (!targetUserAccount) {
-      setError('Сначала найдите пайщика')
-      return
-    }
+    const { amount, user, store } = base
 
     setSbpLoading(true)
+    setCashQrLoading(true)
     setError('')
+    setCashOperationMessage('')
 
     try {
-      const res = await fetch(`${API_BASE}/cashier/topup/sbp`, {
+      const params = new URLSearchParams({
+        amount: String(amount),
+        login: String(user.user_account),
+        store_id: String(store.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/qr?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_account: targetUserAccount,
-          amount: Number(sbpAmount),
-          session_id: sessionId,
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось пополнить П/С')
+        throw new Error(getErrorMessage(data, 'Не удалось сформировать QR пополнения'))
       }
 
       const data = await res.json()
+      const qrBase64 = String(data.qr_base64 || '')
 
-      setSbpDialogOpen(false)
-      setSbpMessage('')
-
-      if (orderDetails) {
-        await openOrder(orderDetails.order.order_number)
-      } else {
-        setFoundUser((prev) =>
-          prev
-            ? {
-                ...prev,
-                balance: data.user_balance_after,
-              }
-            : prev
-        )
+      if (!qrBase64 && !data.qr_url) {
+        throw new Error('Сервер не вернул QR для пополнения')
       }
+
+      setCashQrDialog({
+		amount: Number(data.amount ? Number(data.amount) / 100 : amount),
+        old_balance: Number(user.balance || 0),
+        qr_base64: qrBase64,
+        image_type: String(data.image_type || 'image/png'),
+        qr_url: data.qr_url || null,
+        ttl: Number(data.ttl || 15),
+        created_at: Date.now(),
+      })
     } catch (e: any) {
       setError(e.message || 'Ошибка СБП-пополнения')
     } finally {
       setSbpLoading(false)
+      setCashQrLoading(false)
     }
   }
 
+  function closeCashQrDialog() {
+    setCashQrDialog(null)
+    setCashQrLoading(false)
+  }
 
-  if (selectedStore && cashier && orderDetails) {
-    const order = orderDetails.order
-    const fio = `${order.user_fam ?? ''} ${order.user_name ?? ''} ${order.user_otch ?? ''}`.trim()
+  async function openCashoutCheck() {
+    const base = validateCashOperationBase()
+    if (!base) return
+
+    const { amount, user, store } = base
+
+    // Реальный остаток наличных в кассе берем только из /cashier/status
+    // (/cashier/search содержит legacy-поля store.cash_balance/owner_balance и может возвращать 0/null).
+    const cashInBox = Number(cashBalance || 0)
+    if (cashInBox < amount) {
+      setError('Недостаточно средств в кассе')
+      return
+    }
+
+    if (!user.user_id) {
+      setError('Не удалось выполнить выдачу: в данных пайщика нет user_id')
+      return
+    }
+
+    setCashoutLoading(true)
+    setError('')
+    setCashOperationMessage('')
+
+    try {
+      const params = new URLSearchParams({
+        user_id: String(user.user_id),
+        amount: String(amount),
+        store_id: String(store.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/cashout/check?${params.toString()}`, {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось проверить выдачу'))
+      }
+
+      const data = await res.json()
+      const amountWithComission = Number(data.amountwithcomission || amount)
+      const customerBalance = Number(data.customerbalance || 0)
+
+      if (customerBalance < amountWithComission) {
+        throw new Error('Недостаточно средств пайщика')
+      }
+
+      setCashoutCheckDialog({
+        amount,
+        amountwithcomission: amountWithComission,
+        customerbalance: customerBalance,
+        cashierbalance: Number(data.cashierbalance || 0),
+        moneyincashbox: Number(data.moneyincashbox || 0),
+      })
+      setCashoutPin('')
+
+      if (shouldUseTouchKeypad()) {
+        setMainKeypadTarget('cashoutPin')
+      }
+    } catch (e: any) {
+      setError(e.message || 'Ошибка проверки выдачи')
+    } finally {
+      setCashoutLoading(false)
+    }
+  }
+
+  async function cashout() {
+    if (!selectedStore || !foundUser || !cashoutCheckDialog) return
+
+    if (!foundUser.user_id) {
+      setError('Не удалось выполнить выдачу: в данных пайщика нет user_id')
+      return
+    }
+
+    if (cashoutPin.length !== 4) {
+      setError('Введите PIN-код из 4 цифр')
+      return
+    }
+
+    setCashoutLoading(true)
+    setError('')
+    setCashOperationMessage('')
+
+    try {
+      const params = new URLSearchParams({
+        user_id: String(foundUser.user_id),
+        amount: String(cashoutCheckDialog.amount),
+        pin: cashoutPin,
+        store_id: String(selectedStore.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/cashout?${params.toString()}`, {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось выполнить выдачу'))
+      }
+
+      const data = await res.json()
+
+      applyCashBalances(data)
+      setCashoutCheckDialog(null)
+      setCashoutPin('')
+      setCashTopupAmount('')
+      if (mainKeypadTarget === 'cashoutPin') setMainKeypadTarget(null)
+      setCashOperationMessage('Выдача выполнена')
+      showCashSuccess('Выдача выполнена', 'Наличные выданы пайщику.', data)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка выдачи')
+    } finally {
+      setCashoutLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!cashQrDialog || !foundUser) return
+
+    const ttlMs = Math.max(1, Number(cashQrDialog.ttl || 15)) * 60 * 1000
+    let stopped = false
+
+    const pollBalance = async () => {
+      if (stopped || !cashQrDialog || !foundUser) return
+
+      const elapsed = Date.now() - cashQrDialog.created_at
+      if (elapsed >= ttlMs) {
+        setCashQrDialog(null)
+        setCashOperationMessage('Время действия QR истекло. При необходимости сформируйте новый QR.')
+        return
+      }
+
+      try {
+        const data = await fetchCurrentShareholderData(foundUser.user_account)
+        const newBalance = Number(data.user.balance || 0)
+
+        setFoundUser(data.user)
+        setOrders(data.orders)
+        setStoreState(data.store)
+
+        if (newBalance > Number(cashQrDialog.old_balance || 0)) {
+          setCashQrDialog(null)
+          setCashTopupAmount('')
+          setCashOperationMessage('Баланс пайщика обновлён')
+          setCashSuccessDialog({
+            title: 'СБП-пополнение выполнено',
+            text: 'Баланс пайщика обновлён.',
+            customerbalance: newBalance,
+          })
+        }
+      } catch (e) {
+        console.error('Ошибка проверки баланса пайщика по QR', e)
+      }
+    }
+
+    const timer = window.setInterval(pollBalance, 30000)
+
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [cashQrDialog, foundUser?.user_account, cashier, selectedStore])
+
+
+
+  if (selectedStore && cashier && stockDialogOpen) {
+    const stockActionButtonLabel = stockSearchQuery.trim()
+      ? (stockSearchLoading ? 'Ищем...' : 'Показать')
+      : 'Выбрать товар'
 
     return (
       <div className="app">
@@ -2248,7 +4169,310 @@ function App() {
               ☰
             </button>
             <div>
-              <div className="title">Заказ № {order.order_number}</div>
+              <div className="title">Приход товара</div>
+              <div className="subtitle">
+                Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
+              </div>
+            </div>
+          </div>
+          <button className="secondary" onClick={closeStockReceiptScreen} disabled={stockLoading}>
+            Назад
+          </button>
+        </header>
+
+        {renderSideMenu()}
+
+        <main className="stockReceiptScreen">
+          <section className="stockReceiptMain">
+            <div className="stockReceiptTop">
+              <div>
+                <h2>Оприходование товара</h2>
+                <p className="muted">Найдите товар по ID, штрихкоду или названию, укажите количество и комментарий.</p>
+              </div>
+              <div className="stockReceiptStatus">
+                <span>Точка выдачи</span>
+                <b>{selectedStore.store_name}</b>
+              </div>
+            </div>
+
+            <div className="stockReceiptLayout">
+              <section className="stockReceiptSelectorCard">
+                <div className="stockSearchBlock productSelectorBlock">
+                  <label>Товар</label>
+                  <div className="stockSearchRow productSelectorSearchRow stockReceiptSearchRow">
+                    <input
+                      ref={stockSearchInputRef}
+                      value={stockSearchQuery}
+                      onChange={(e) => setStockSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void handleStockProductAction()
+                        }
+                      }}
+                      placeholder="ID, штрихкод или название товара"
+                      autoComplete="off"
+                    />
+                    <button
+                      className="primary"
+                      onClick={handleStockProductAction}
+                      disabled={stockSearchLoading}
+                    >
+                      {stockActionButtonLabel}
+                    </button>
+                  </div>
+
+                  {stockSelectedItem && (
+                    <div className="selectedProductCard stockReceiptSelectedProduct">
+                      <div className="itemPhoto">
+                        {stockSelectedItem.photo_url ? (
+                          <img src={stockSelectedItem.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+                      <div>
+                        <b>{stockSelectedItem.item_name}</b>
+                        <span>Код {stockSelectedItem.item} · {getProductKindLabel(stockSelectedItem)}</span>
+                        <span>
+                          Остаток: {formatQty(stockSelectedItem.item_stock, stockSelectedItem.isfractional)} · Доступно: {formatQty(stockSelectedItem.available_qty, stockSelectedItem.isfractional)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary smallButton"
+                        onClick={changeStockSelectedItem}
+                        disabled={stockLoading}
+                      >
+                        Сменить товар
+                      </button>
+                    </div>
+                  )}
+
+                  {stockSearchQuery.trim() && stockSearchItems.length > 0 && (
+                    <div className="stockSearchResults stockReceiptSearchResults">
+                      {stockSearchItems.map((item) => (
+                        <button
+                          key={item.item}
+                          className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                          onClick={() => selectStockItem(item)}
+                          type="button"
+                        >
+                          <div>
+                            <b>{item.item_name}</b>
+                            <span>Код {item.item} · {getProductKindLabel(item)}</span>
+                          </div>
+                          <div>
+                            <b>{formatMoney(item.price)}</b>
+                            <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {stockSearchQuery.trim() && !stockSearchLoading && stockSearchItems.length === 0 && !stockSelectedItem && (
+                    <div className="emptyBox">Введите запрос или нажмите «Выбрать товар» для выбора из классификатора.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="stockReceiptOperationCard">
+                <div className="stockField stockQtyBlock">
+                  <label>Количество прихода</label>
+
+                  {!stockSelectedItem ? (
+                    <div className="emptyBox stockQtyHint">
+                      Сначала выберите товар. После выбора откроется клавиатура количества: для штучного товара без точки, для весового — с десятичной точкой.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="qtyControl stockQtyControl">
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(-1)}
+                          disabled={stockLoading}
+                        >
+                          -
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyDisplay"
+                          aria-label="Количество прихода"
+                          onClick={() => setStockQtyCaretIndex(String(stockForm.qty_delta || '').length)}
+                        >
+                          {String(stockForm.qty_delta || '0').split('').map((char, index) => (
+                            <span
+                              key={`${char}-${index}`}
+                              className="qtyDigitSlot"
+                              onClick={(e) => {
+                                e.stopPropagation()
+
+                                if (!stockForm.qty_delta) {
+                                  setStockQtyCaretIndex(0)
+                                  return
+                                }
+
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                                setStockQtyCaretIndex(nextIndex)
+                              }}
+                            >
+                              {stockForm.qty_delta && stockQtyCaretIndex === index && <span className="qtyCaret" />}
+                              {char}
+                            </span>
+                          ))}
+                          {stockForm.qty_delta && stockQtyCaretIndex >= String(stockForm.qty_delta).length && <span className="qtyCaret" />}
+                          {!stockForm.qty_delta && <span className="qtyCaret" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(1)}
+                          disabled={stockLoading}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <div className="qtyKeypad stockQtyKeypad" aria-label="Цифровая клавиатура прихода">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                          <button
+                            key={digit}
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={() => appendStockQtyDigit(digit)}
+                            disabled={stockLoading}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn secondary"
+                          onClick={backspaceStockQtyDraft}
+                          disabled={stockLoading}
+                        >
+                          ←
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn"
+                          onClick={() => appendStockQtyDigit('0')}
+                          disabled={stockLoading}
+                        >
+                          0
+                        </button>
+
+                        {stockSelectedItem.isfractional ? (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={appendStockQtyDot}
+                            disabled={stockLoading}
+                          >
+                            .
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn secondary"
+                            onClick={clearStockQtyDraft}
+                            disabled={stockLoading}
+                          >
+                            C
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="muted stockQtyKindHint">
+                        {stockSelectedItem.isfractional
+                          ? `Весовой товар: можно вводить дробное количество, ${stockSelectedItem.unit || stockSelectedItem.pack || 'кг'}`
+                          : 'Штучный товар: ввод только целыми числами'}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <label>Комментарий</label>
+                <input
+                  value={stockForm.comment}
+                  onChange={(e) => updateStockField('comment', e.target.value)}
+                  placeholder="Комментарий к приходу"
+                />
+
+                {stockMessage && <div className="notice">{stockMessage}</div>}
+                {error && <div className="error">{error}</div>}
+
+                <div className="stockReceiptActions">
+                  <button className="secondary" onClick={closeStockReceiptScreen} disabled={stockLoading}>
+                    Назад
+                  </button>
+                  <button className="primary" onClick={stockReceipt} disabled={stockLoading || !stockForm.item}>
+                    {stockLoading ? 'Оприходуем...' : 'Оприходовать'}
+                  </button>
+                </div>
+              </section>
+            </div>
+          </section>
+        </main>
+
+        {stockSuccessDialog && (
+          <div className="qtyOverlay">
+            <div className="confirmDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Операция выполнена</h2>
+                  <p className="muted">Товар успешно оприходован на выбранную точку выдачи.</p>
+                </div>
+              </div>
+
+              <div className="confirmDialogBody">
+                <div className="confirmDialogSummary">
+                  <span>Товар</span>
+                  <b>{stockSuccessDialog.itemName}</b>
+                </div>
+                <div className="confirmDialogSummary">
+                  <span>Количество</span>
+                  <b>{stockSuccessDialog.qty}</b>
+                </div>
+              </div>
+
+              <div className="confirmDialogActions">
+                <button className="secondary" onClick={() => setStockSuccessDialog(null)}>
+                  Ок
+                </button>
+                <button className="primary" onClick={closeStockReceiptScreen}>
+                  Закрыть приход
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (selectedStore && cashier && orderDetails) {
+    const order = orderDetails.order
+    const fio = `${order.user_fam ?? ''} ${order.user_name ?? ''} ${order.user_otch ?? ''}`.trim()
+    const activeOrderLines = (orderDetails.lines || []).filter((line) => Number(line.qty_final || 0) > 0)
+
+    return (
+      <div className="app">
+        <header className="topbar orderTopbar" onPointerUp={handleTopbarPointerUp}>
+          <div className="topbarLeft">
+            <button className="menuButton" onClick={() => setSideMenuOpen(true)} aria-label="Открыть меню">
+              ☰
+            </button>
+            <div>
+              <div className="title">{order.order_number > 0 ? `Заказ № ${order.order_number}` : 'Новый заказ'}</div>
               <div className="subtitle">
                 Кассир: {cashier.cashier_account} · ТВТ: {selectedStore.store_name} · Сессия: {sessionId.slice(0, 8)}
               </div>
@@ -2272,17 +4496,23 @@ function App() {
               </div>
 
               <div className="orderSummary orderSummaryCompact">
-                <div>
-                  <span>Баланс пайщика</span>
-                  <b>{formatMoney(order.user_balance)}</b>
+                <div
+                  className={`orderBalanceCard${orderBalanceRefreshLoading ? ' isRefreshing' : ''}`}
+                  onPointerUp={handleOrderBalancePointerUp}
+                  role="button"
+                  tabIndex={0}
+                  title="Дважды нажмите, чтобы обновить баланс"
+                >
+                  <span>{orderBalanceRefreshLoading ? 'Обновление...' : 'Баланс пайщика'}</span>
+                  <b>{formatMoney(getVisibleOrderUserBalance(order))}</b>
                 </div>
                 <div>
                   <span>П/С владельца ТВТ</span>
-                  <b>{formatMoney(orderDetails.store.owner_balance)}</b>
+                  <b>{formatMoney(ownerBalance)}</b>
                 </div>
                 <div>
                   <span>Нал. в кассе</span>
-                  <b>{formatMoney(orderDetails.store.cash_balance)}</b>
+                  <b>{formatMoney(cashBalance)}</b>
                 </div>
                 <div>
                   <span>Лимит</span>
@@ -2297,8 +4527,9 @@ function App() {
             </div>
 
             {error && <div className="error">{error}</div>}
+            {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
 
-            {orderDetails.lines.length === 0 ? (
+            {activeOrderLines.length === 0 ? (
               <div className="emptyOrder">
                 В заказе пока нет товаров
               </div>
@@ -2311,41 +4542,31 @@ function App() {
                   <span>Сумма</span>
                 </div>
 
-                {orderDetails.lines.map((line) => (
+                {activeOrderLines.map((line) => (
                   <button
                     className={[
                       'lineRow',
-                      line.item_type === 'weight' ? 'weightLineRow' : '',
+                      line.isfractional ? 'weightLineRow' : '',
+                      isOrderLineUnsaved(line) ? 'unsavedLineRow' : '',
                       'swipeLineRow',
-                      swipeDragLineId === line.order_line_id ? 'swipeDragging' : '',
-                      swipeAnimatingLineId === line.order_line_id ? 'swipeDeleteAnimating' : '',
+                      swipeDragLineId === getOrderLineUiId(line) ? 'swipeDragging' : '',
+                      swipeAnimatingLineId === getOrderLineUiId(line) ? 'swipeDeleteAnimating' : '',
                     ].filter(Boolean).join(' ')}
-                    key={line.order_line_id}
+                    key={getOrderLineUiId(line)}
                     onPointerDown={(e) => handleLinePointerDown(e, line)}
                     onPointerUp={(e) => handleLinePointerUp(e, line)}
                     onPointerMove={(e) => handleLinePointerMove(e, line)}
                     onPointerCancel={handleLinePointerCancel}
-                    style={
-                      swipeDragLineId === line.order_line_id
-                        ? {
-                            transform: `translateX(${swipeDragX}px)`,
-                            opacity: Math.max(0.72, 1 - swipeDragX / 420),
-                          }
-                        : swipeAnimatingLineId === line.order_line_id
-                          ? ({
-                              '--swipe-start-x': `${swipeCommitX}px`,
-                            } as any)
-                          : undefined
-                    }
+                    style={getOrderLineRowStyle(line, swipeDragLineId, swipeAnimatingLineId, swipeDragX, swipeCommitX)}
                     onClick={() => handleLineRowClick(line)}
                   >
                     <span>
                       <b>{line.item_name}</b>
                       <small>
-                        Код {line.item} · {line.item_type === 'weight' ? `Весовой, ${line.pack ?? 'кг'}` : 'Штучный'}
+                        Код {line.item} · {line.isfractional ? `Весовой, ${line.pack ?? 'кг'}` : 'Штучный'}
                       </small>
                     </span>
-                    <span>{formatQty(line.qty_final, line.item_type)}</span>
+                    <span>{formatQty(line.qty_final, line.isfractional)}</span>
                     <span>{formatMoney(line.price)}</span>
                     <span>{formatMoney(line.line_sum)}</span>
                   </button>
@@ -2353,23 +4574,99 @@ function App() {
               </div>
             )}
 
-            <div className="quickAddRow">
-              <label>Код товара</label>
+            <div className="quickAddRow" style={{ position: 'relative' }}>
+              <label>Товар</label>
               <input
                 value={quickItemCode}
-                onChange={(e) => setQuickItemCode(e.target.value)}
+                onChange={(e) => {
+                  setQuickItemCode(e.target.value)
+                  setQuickItemDropdownOpen(true)
+                }}
+                onFocus={() => {
+                  if (quickItemMatches.length > 0) setQuickItemDropdownOpen(true)
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
+                    e.preventDefault()
                     handleAddButton()
                   }
+                  if (e.key === 'Escape') {
+                    setQuickItemDropdownOpen(false)
+                  }
                 }}
-                inputMode="numeric"
-                placeholder="Введите код товара или оставьте пустым для выбора"
+                inputMode="text"
+                placeholder="Введите ID, штрихкод или название товара"
                 disabled={orderDetails.readonly}
+                autoComplete="off"
               />
-              <button className="primary" onClick={handleAddButton} disabled={orderDetails.readonly || itemsLoading}>
-                {quickItemCode.trim() ? 'Добавить по коду' : 'Выбрать товар'}
+              <button className="primary" onClick={handleAddButton} disabled={orderDetails.readonly || itemsLoading || quickItemSearchLoading}>
+                {quickItemCode.trim() ? 'Показать' : 'Выбрать товар'}
               </button>
+
+              {quickItemCode.trim() && quickItemDropdownOpen && (
+                <div
+                  className="quickItemDropdown"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '100%',
+                    zIndex: 50,
+                    marginTop: 8,
+                    maxHeight: 360,
+                    overflowY: 'auto',
+                    borderRadius: 16,
+                    border: '1px solid rgba(0, 0, 0, 0.12)',
+                    background: '#fff',
+                    boxShadow: '0 18px 45px rgba(0, 0, 0, 0.18)',
+                    padding: 8,
+                  }}
+                >
+                  {quickItemSearchLoading && (
+                    <div className="emptyBox">Ищем товары...</div>
+                  )}
+
+                  {!quickItemSearchLoading && quickItemMatches.length === 0 && (
+                    <div className="emptyBox">Товары не найдены</div>
+                  )}
+
+                  {!quickItemSearchLoading && quickItemMatches.map((item) => (
+                    <button
+                      key={item.item}
+                      type="button"
+                      className="itemCard"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => addQuickItemToCurrentOrder(item)}
+                      disabled={itemsLoading || item.available_qty <= 0}
+                      style={{ width: '100%', textAlign: 'left' }}
+                    >
+                      <div className="itemPhoto">
+                        {item.photo_url ? (
+                          <img src={item.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+
+                      <div className="itemInfo">
+                        <b>{item.item_name}</b>
+                        <span>
+                          ID {item.item}{item.code ? ` · ШК ${item.code}` : ''} · {item.item_category || 'Без категории'}
+                        </span>
+                        <span>
+                          {item.isfractional ? `Весовой · ${item.pack || 'кг'}` : 'Штучный товар'}
+                        </span>
+                      </div>
+
+                      <div className="itemNumbers">
+                        <b>{formatMoney(item.price)}</b>
+                        <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
+                        <span>{itemPickerMode === 'order' ? 'Добавить' : 'Выбрать'}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="orderActions">
@@ -2389,70 +4686,64 @@ function App() {
               <button
                 className="primary"
                 onClick={payOrder}
-                disabled={orderDetails.readonly || orderDetails.lines.length === 0 || payLoading}
+                disabled={orderDetails.readonly || orderDetails.order.order_number <= 0 || activeOrderLines.length === 0 || payLoading || orderPaymentQrLoading}
               >
-                {payLoading ? 'Оплачиваем...' : 'Оплатить'}
+                {payLoading || orderPaymentQrLoading ? 'Оплачиваем...' : 'Оплатить'}
               </button>
               <button
                 className="secondary"
                 onClick={() => openReceipt(orderDetails.order.order_number)}
-                disabled={orderDetails.lines.length === 0}
+                disabled={orderDetails.order.order_number <= 0 || activeOrderLines.length === 0}
               >
                 Чек
               </button>
             </div>
 
-            {sbpDialogOpen && (
+            {orderPaymentQrDialog && (
               <div className="qtyOverlay">
                 <div className="qtyDialog">
                   <div className="qtyDialogHeader">
                     <div>
-                      <h2>Пополнение П/С через СБП</h2>
-                      <p className="muted">Заглушка: сумма будет зачислена на П/С пайщика с технического счета 9999999</p>
+                      <h2>Пополнение баланса покупателя</h2>
+                      <p className="muted">Заказ № {orderPaymentQrDialog.order_number}</p>
                     </div>
-                    <button className="secondary" onClick={() => setSbpDialogOpen(false)}>
+                    <button className="secondary" onClick={closeOrderPaymentQrDialog}>
                       Закрыть
                     </button>
                   </div>
 
                   <div className="qtyDialogBody">
-                    {sbpMessage && <div className="notice">{sbpMessage}</div>}
+                    {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
 
-                    <label>Сумма пополнения</label>
-                    <input
-                      ref={sbpAmountInputRef}
-                      value={sbpAmount}
-                      onChange={(e) => setSbpAmount(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          setMainKeypadTarget(null)
-                          void sbpTopupStub()
-                        }
-                      }}
-                      onFocus={() => {
-                        if (shouldUseTouchKeypad()) setMainKeypadTarget('sbpTopup')
-                      }}
-                      onClick={() => {
-                        if (shouldUseTouchKeypad()) setMainKeypadTarget('sbpTopup')
-                      }}
-                      readOnly={shouldUseTouchKeypad()}
-                      inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
-                      enterKeyHint="done"
-                      placeholder="0.00"
-                    />
+                    <div className="cashTopupConfirmAmount">
+                      <span>Сумма к оплате с учетом задолженности</span>
+					  <b>{formatMoney(Number(orderPaymentQrDialog.amount || 0) / 100)}</b>
+                    </div>
 
-                    {error && <div className="error">{error}</div>}
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
+                      <img
+                        src={buildQrImageSrc(orderPaymentQrDialog.qr_base64, orderPaymentQrDialog.image_type)}
+                        alt="QR для пополнения баланса"
+                        style={{ width: 300, height: 300, maxWidth: '100%', objectFit: 'contain' }}
+                      />
+                    </div>
+
+                    <p className="muted" style={{ textAlign: 'center', margin: 0 }}>
+                      Проверяем баланс покупателя каждые 30 секунд. QR действует {orderPaymentQrDialog.ttl} мин.
+                    </p>
+
+                    {orderPaymentQrDialog.qr_url && (
+                      <p className="muted" style={{ textAlign: 'center', wordBreak: 'break-all' }}>
+                        {orderPaymentQrDialog.qr_url}
+                      </p>
+                    )}
 
                     <div className="qtyActions">
-                      <button className="secondary" onClick={() => setSbpDialogOpen(false)} disabled={sbpLoading}>
-                        Отмена
+                      <button className="secondary" onClick={closeOrderPaymentQrDialog}>
+                        Закрыть
                       </button>
-                      <button className="primary" onClick={sbpTopupStub} disabled={sbpLoading || Number(sbpAmount) <= 0}>
-                        {sbpLoading ? 'Пополняем...' : 'Пополнить'}
-                      </button>
-                      <button className="primary" onClick={payOrder} disabled={sbpLoading || payLoading}>
-                        Снова оплатить
+                      <button className="primary" onClick={payOrder} disabled={payLoading || orderPaymentQrLoading}>
+                        {payLoading || orderPaymentQrLoading ? 'Проверяем...' : 'Повторить оплату'}
                       </button>
                     </div>
                   </div>
@@ -2495,12 +4786,12 @@ function App() {
 
                       <div className="receiptLines">
                         {receiptData.lines.map((line) => (
-                          <div className="receiptLine" key={line.order_line_id}>
+                          <div className="receiptLine" key={getOrderLineUiId(line)}>
                             <div>
                               <b>{line.item_name}</b>
                               <span>Код {line.item}</span>
                             </div>
-                            <div>{formatQty(line.qty_final, line.item_type)}</div>
+                            <div>{formatQty(line.qty_final, line.isfractional)}</div>
                             <div>{formatMoney(line.price)}</div>
                             <div>{formatMoney(line.line_sum)}</div>
                           </div>
@@ -2540,10 +4831,10 @@ function App() {
                       <div>
                         <b>{qtyDialogLine.item_name}</b>
                         <p className="muted">
-                          Код {qtyDialogLine.item} · {qtyDialogLine.item_type === 'weight' ? `Весовой, ${qtyDialogLine.pack ?? 'кг'}` : 'Штучный'}
+                          Код {qtyDialogLine.item} · {qtyDialogLine.isfractional ? `Весовой, ${qtyDialogLine.pack ?? 'кг'}` : 'Штучный'}
                         </p>
                         <p className="muted">
-                          Максимум: {formatQty(qtyDialogLine.max_qty_final, qtyDialogLine.item_type)}
+                          Максимум: {formatQty(qtyDialogLine.max_qty_final, qtyDialogLine.isfractional)}
                         </p>
                       </div>
                     </div>
@@ -2617,7 +4908,7 @@ function App() {
                       >
                         0
                       </button>
-                      {qtyDialogLine.item_type === 'weight' ? (
+                      {qtyDialogLine.isfractional ? (
                         <button
                           type="button"
                           className="qtyKeyBtn"
@@ -2692,7 +4983,7 @@ function App() {
                     <p>Товар будет удален из заказа, а резерв по этой позиции вернется в доступный остаток.</p>
                     <div className="lineDeleteSummary">
                       <span>Количество</span>
-                      <b>{formatQty((deleteLineDialogLine || qtyDialogLine)!.qty_final, (deleteLineDialogLine || qtyDialogLine)!.item_type)}</b>
+                      <b>{formatQty((deleteLineDialogLine || qtyDialogLine)!.qty_final, (deleteLineDialogLine || qtyDialogLine)!.isfractional)}</b>
                     </div>
                   </div>
 
@@ -2733,8 +5024,8 @@ function App() {
                 <div className="itemPicker">
                   <div className="itemPickerHeader">
                     <div>
-                      <h2>Добавить товар</h2>
-                      <p className="muted">Поиск по коду товара, названию, категории или подкатегории</p>
+                      <h2>{itemPickerMode === 'stockReceipt' ? 'Выбрать товар для прихода' : itemPickerMode === 'stockView' ? 'Выбрать товар для запасов' : 'Добавить товар'}</h2>
+                      <p className="muted">Автопоиск по штрихкоду или названию</p>
                     </div>
                     <button className="secondary" onClick={() => setItemPickerOpen(false)}>
                       Закрыть
@@ -2746,19 +5037,7 @@ function App() {
                       placeholder="Введите код или название товара"
                       value={itemSearchQuery}
                       onChange={(e) => setItemSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)
-                        }
-                      }}
                     />
-                    <button
-                      className="primary"
-                      onClick={() => loadStoreItems(itemSearchQuery, selectedItemCategory, selectedItemSubcategory)}
-                      disabled={itemsLoading}
-                    >
-                      {itemsLoading ? 'Ищем...' : 'Найти'}
-                    </button>
                     <button
                       className="secondary"
                       onClick={() => {
@@ -2768,11 +5047,12 @@ function App() {
                         loadStoreItems('', '', '')
                       }}
                     >
-                      Все
+                      Очистить
                     </button>
                   </div>
 
-                  <div className="categoryPickers">
+                  {itemCategories.length > 0 && (
+                    <div className="categoryPickers">
                     <select
                       value={selectedItemCategory}
                       onChange={(e) => {
@@ -2806,7 +5086,8 @@ function App() {
                         </option>
                       ))}
                     </select>
-                  </div>
+                    </div>
+                  )}
 
                   {error && <div className="error">{error}</div>}
 
@@ -2819,8 +5100,8 @@ function App() {
                       <button
                         key={item.item}
                         className="itemCard"
-                        onClick={() => addItemToCurrentOrder(item)}
-                        disabled={itemsLoading || item.available_qty <= 0}
+                        onClick={() => handleProductSelectedFromPicker(item)}
+                        disabled={itemsLoading || (itemPickerMode === 'order' && item.available_qty <= 0)}
                       >
                         <div className="itemPhoto">
                           {item.photo_url ? (
@@ -2836,17 +5117,18 @@ function App() {
                             Код {item.item} · {item.item_category || 'Без категории'}
                           </span>
                           <span>
-                            {item.item_type === 'weight'
-                              ? `Весовой · средний вес ${formatQty(item.avg_weight, 'weight')} кг · ${item.pack || 'кг'}`
+                            {item.isfractional
+                              ? `Весовой · средний вес ${formatQty(item.avg_weight, true)} кг · ${item.pack || 'кг'}`
                               : 'Штучный товар'}
                           </span>
                         </div>
 
                         <div className="itemNumbers">
                           <b>{formatMoney(item.price)}</b>
-                          <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
-                          <span>Резерв: {formatQty(item.reserve, item.item_type)}</span>
-                          <span>Доступно: {formatQty(item.available_qty, item.item_type)}</span>
+                          <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                          <span>Резерв: {formatQty(item.reserve, item.isfractional)}</span>
+                          <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
+                          <span>{itemPickerMode === 'order' ? 'Добавить' : 'Выбрать'}</span>
                         </div>
                       </button>
                     ))}
@@ -2880,17 +5162,9 @@ function App() {
           </div>
           <div className="topbarActions">
             <button className="secondary" onClick={openStockViewDialog}>
-              Остатки
+              Запасы
             </button>
-            <button
-              className="secondary"
-              onClick={() => {
-                setStockDialogOpen(true)
-                setStockMessage('')
-                setError('')
-                loadStockSearchItems('')
-              }}
-            >
+            <button className="secondary" onClick={openStockReceiptScreen}>
               Приход
             </button>
             <button className="secondary" onClick={() => setNewUserDialogOpen(true)}>
@@ -2920,7 +5194,7 @@ function App() {
                 <button
                   className="secondary"
                   onClick={() => setDeleteOrderDialog(null)}
-                  disabled={searchLoading}
+                  disabled={cancelOrderLoading}
                 >
                   Закрыть
                 </button>
@@ -2928,7 +5202,7 @@ function App() {
 
               <div className="confirmDialogBody">
                 <p>
-                  Заказ будет удален, а зарезервированные товары вернутся в доступный остаток.
+                  Заказ будет отменен. После подтверждения список заказов пайщика обновится.
                 </p>
                 <div className="confirmDialogSummary">
                   <span>Сумма заказа</span>
@@ -2940,16 +5214,16 @@ function App() {
                 <button
                   className="secondary"
                   onClick={() => setDeleteOrderDialog(null)}
-                  disabled={searchLoading}
+                  disabled={cancelOrderLoading}
                 >
                   Отмена
                 </button>
                 <button
                   className="danger"
-                  onClick={() => deleteOrderFromList(deleteOrderDialog)}
-                  disabled={searchLoading}
+                  onClick={() => handleCancelOrder(deleteOrderDialog.order_number)}
+                  disabled={cancelOrderLoading}
                 >
-                  {searchLoading ? 'Удаляем...' : 'Удалить заказ'}
+                  {cancelOrderLoading ? 'Удаляем...' : 'Удалить заказ'}
                 </button>
               </div>
             </div>
@@ -2957,82 +5231,340 @@ function App() {
         )}
 
         {stockViewDialogOpen && (
-          <div className="itemPickerOverlay">
-            <div className="itemPicker">
-              <div className="itemPickerHeader">
+          <div className="itemPickerOverlay stockWorkOverlay">
+            <div className="itemPicker stockWorkScreen">
+              <div className="itemPickerHeader stockWorkHeader">
                 <div>
-                  <h2>Остатки на ТВТ</h2>
-                  <p className="muted">Текущий остаток, резерв и доступное количество товара</p>
+                  <h2>Запасы</h2>
+                  <p className="muted">Поиск товара, оприходование и списание доступного количества</p>
                 </div>
-                <button className="secondary" onClick={() => setStockViewDialogOpen(false)}>
+                <button className="secondary" onClick={() => setStockViewDialogOpen(false)} disabled={stockViewLoading}>
                   Закрыть
                 </button>
               </div>
 
-              <div className="stockViewSearchRow">
-                <input
-                  value={stockViewQuery}
-                  onChange={(e) => setStockViewQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      loadStockViewItems(stockViewQuery)
-                    }
-                  }}
-                  placeholder="Код, название, категория или подкатегория"
-                />
-                <button
-                  className="primary"
-                  onClick={() => loadStockViewItems(stockViewQuery)}
-                  disabled={stockViewLoading}
-                >
-                  {stockViewLoading ? 'Ищем...' : 'Найти'}
-                </button>
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setStockViewQuery('')
-                    loadStockViewItems('')
-                  }}
-                >
-                  Все
-                </button>
-              </div>
-
-              {error && <div className="error">{error}</div>}
-
-              <div className="stockViewTable">
-                <div className="stockViewHeader">
-                  <span>Товар</span>
-                  <span>Цена</span>
-                  <span>Остаток</span>
-                  <span>Резерв</span>
-                  <span>Доступно</span>
-                </div>
-
-                {stockViewItems.length === 0 && (
-                  <div className="emptyBox">Товары не найдены</div>
-                )}
-
-                {stockViewItems.map((item) => (
-                  <div className="stockViewRow" key={item.item}>
-                    <div>
-                      <b>{item.item_name}</b>
-                      <span>
-                        Код {item.item} · {item.item_category || 'Без категории'} · {item.item_subcategory || 'Без подкатегории'}
-                      </span>
+              <div className="stockWorkLayout">
+                <section className="stockWorkSelectorCard">
+                  <div className="productSelectorBlock">
+                    <div className="stockSearchRow productSelectorSearchRow stockWorkSearchRow">
+                      <input
+                        value={stockViewQuery}
+                        onChange={(e) => setStockViewQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void handleStockViewProductAction()
+                          }
+                        }}
+                        placeholder="Код, штрихкод или название товара"
+                      />
+                      <button
+                        className="primary"
+                        onClick={handleStockViewProductAction}
+                        disabled={stockViewLoading}
+                      >
+                        {stockViewLoading ? 'Ищем...' : stockViewQuery.trim() ? 'Показать' : 'Выбрать товар'}
+                      </button>
                     </div>
-                    <div>{formatMoney(item.price)}</div>
-                    <div>{formatQty(item.item_stock, item.item_type)}</div>
-                    <div>{formatQty(item.reserve, item.item_type)}</div>
-                    <div>
-                      <b>{formatQty(item.available_qty, item.item_type)}</b>
+
+                    {stockViewSelectedItem && (
+                      <div className="selectedProductCard stockWorkSelectedProduct">
+                        <div className="itemPhoto">
+                          {stockViewSelectedItem.photo_url ? (
+                            <img src={stockViewSelectedItem.photo_url} alt="" />
+                          ) : (
+                            <span>📦</span>
+                          )}
+                        </div>
+                        <div>
+                          <b>{stockViewSelectedItem.item_name}</b>
+                          <span>Код {stockViewSelectedItem.item} · {getProductKindLabel(stockViewSelectedItem)}</span>
+                          <span>Цена: {formatMoney(stockViewSelectedItem.price)}</span>
+                          <span>
+                            Остаток: {formatQty(stockViewSelectedItem.item_stock, stockViewSelectedItem.isfractional)} · Резерв: {formatQty(stockViewSelectedItem.reserve, stockViewSelectedItem.isfractional)}
+                          </span>
+                          <span>Доступно: {formatQty(stockViewSelectedItem.available_qty, stockViewSelectedItem.isfractional)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary smallButton"
+                          onClick={() => {
+                            setStockViewSelectedItem(null)
+                            setStockViewQty('')
+                            setStockViewComment('')
+                            setStockViewQtyCaretIndex(0)
+                            setStockViewMessage('Выберите новый товар из текущей выборки или через поиск')
+                          }}
+                        >
+                          Сменить товар
+                        </button>
+                      </div>
+                    )}
+
+                    {stockViewItems.length > 0 && (
+                      <div className="stockSearchResults stockWorkSearchResults">
+                        {stockViewItems.map((item) => (
+                          <button
+                            key={item.item}
+                            className={stockViewSelectedItem?.item === item.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                            onClick={() => selectStockViewItem(item)}
+                          >
+                            <div>
+                              <b>{item.item_name}</b>
+                              <span>Код {item.item} · {getProductKindLabel(item)}</span>
+                            </div>
+                            <div>
+                              <b>{formatMoney(item.price)}</b>
+                              <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                              <span>Доступно: {formatQty(item.available_qty, item.isfractional)}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {stockViewItems.length === 0 && !stockViewLoading && (
+                      <div className="emptyBox">Введите товар или нажмите «Выбрать товар»</div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="stockWorkOperationCard">
+                  <div>
+                    <h3>Операция</h3>
+                    <div className="stockWorkOperationSwitch">
+                      <button
+                        type="button"
+                        className={stockViewOperation === 'post' ? 'stockWorkOperationButton post active' : 'stockWorkOperationButton post'}
+                        onClick={() => setStockViewOperation('post')}
+                      >
+                        <b>Оприходовать</b>
+                        <span>Остаток увеличится</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={stockViewOperation === 'writeoff' ? 'stockWorkOperationButton writeoff active' : 'stockWorkOperationButton writeoff'}
+                        onClick={() => setStockViewOperation('writeoff')}
+                      >
+                        <b>Списать</b>
+                        <span>Доступное количество уменьшится</span>
+                      </button>
                     </div>
                   </div>
-                ))}
+
+                  <div className="stockField stockQtyBlock">
+                    <label>{stockViewOperation === 'writeoff' ? 'Количество списания' : 'Количество прихода'}</label>
+
+                    {!stockViewSelectedItem ? (
+                      <div className="emptyBox stockQtyHint">
+                        Сначала выберите товар. Для штучного товара доступен ввод только целыми числами, для весового — дробное количество.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="qtyControl stockQtyControl">
+                          <button
+                            type="button"
+                            className="primary qtyBtn"
+                            onClick={() => changeStockViewQtyDraft(-1)}
+                            disabled={stockViewLoading}
+                          >
+                            -
+                          </button>
+
+                          <button
+                            type="button"
+                            className="qtyDisplay"
+                            aria-label="Количество операции"
+                            onClick={() => setStockViewQtyCaretIndex(String(stockViewQty || '').length)}
+                          >
+                            {String(stockViewQty || '0').split('').map((char, index) => (
+                              <span
+                                key={`${char}-${index}`}
+                                className="qtyDigitSlot"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+
+                                  if (!stockViewQty) {
+                                    setStockViewQtyCaretIndex(0)
+                                    return
+                                  }
+
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                                  setStockViewQtyCaretIndex(nextIndex)
+                                }}
+                              >
+                                {stockViewQty && stockViewQtyCaretIndex === index && <span className="qtyCaret" />}
+                                {char}
+                              </span>
+                            ))}
+                            {stockViewQty && stockViewQtyCaretIndex >= String(stockViewQty).length && <span className="qtyCaret" />}
+                            {!stockViewQty && <span className="qtyCaret" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="primary qtyBtn"
+                            onClick={() => changeStockViewQtyDraft(1)}
+                            disabled={stockViewLoading}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <div className="qtyKeypad stockQtyKeypad" aria-label="Цифровая клавиатура запасов">
+                          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                            <button
+                              key={digit}
+                              type="button"
+                              className="qtyKeyBtn"
+                              onClick={() => appendStockViewQtyDigit(digit)}
+                              disabled={stockViewLoading}
+                            >
+                              {digit}
+                            </button>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="qtyKeyBtn secondary"
+                            onClick={backspaceStockViewQtyDraft}
+                            disabled={stockViewLoading}
+                          >
+                            ←
+                          </button>
+
+                          <button
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={() => appendStockViewQtyDigit('0')}
+                            disabled={stockViewLoading}
+                          >
+                            0
+                          </button>
+
+                          {stockViewSelectedItem.isfractional ? (
+                            <button
+                              type="button"
+                              className="qtyKeyBtn"
+                              onClick={appendStockViewQtyDot}
+                              disabled={stockViewLoading}
+                            >
+                              .
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="qtyKeyBtn secondary"
+                              onClick={clearStockViewQtyDraft}
+                              disabled={stockViewLoading}
+                            >
+                              C
+                            </button>
+                          )}
+                        </div>
+
+                        <p className="muted stockQtyKindHint">
+                          {stockViewSelectedItem.isfractional
+                            ? `Весовой товар: можно вводить дробное количество, ${stockViewSelectedItem.unit || stockViewSelectedItem.pack || 'кг'}`
+                            : 'Штучный товар: ввод только целыми числами'}
+                        </p>
+
+                        {stockViewOperation === 'writeoff' && (
+                          <p className="muted stockQtyHint">
+                            Доступно для списания: {formatQty(stockViewSelectedItem.available_qty, stockViewSelectedItem.isfractional)}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <label>Комментарий</label>
+                  <input
+                    value={stockViewComment}
+                    onChange={(e) => setStockViewComment(e.target.value)}
+                    placeholder="Комментарий к операции"
+                  />
+
+                  {stockViewMessage && <div className="notice">{stockViewMessage}</div>}
+                  {error && <div className="error">{error}</div>}
+
+                  <div className="stockWorkActions">
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setStockViewQty('')
+                        setStockViewComment('')
+                        setStockViewQtyCaretIndex(0)
+                        setStockViewMessage('')
+                      }}
+                      disabled={stockViewLoading}
+                    >
+                      Очистить
+                    </button>
+                    <button
+                      className={stockViewOperation === 'writeoff' ? 'danger' : 'primary'}
+                      onClick={performStockViewOperation}
+                      disabled={stockViewLoading || !stockViewSelectedItem}
+                    >
+                      {stockViewLoading
+                        ? 'Выполняем...'
+                        : stockViewOperation === 'writeoff'
+                          ? 'Списать'
+                          : 'Оприходовать'}
+                    </button>
+                  </div>
+                </section>
               </div>
             </div>
           </div>
         )}
+
+
+
+        {stockViewSuccessDialog && (
+          <div className="qtyOverlay">
+            <div className="cashTopupConfirmDialog">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Операция выполнена</h2>
+                  <p className="muted">
+                    {stockViewSuccessDialog.operation === 'writeoff' ? 'Списание товара' : 'Оприходование товара'}
+                  </p>
+                </div>
+                <button className="secondary" onClick={() => setStockViewSuccessDialog(null)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                <div className="cashTopupConfirmRow">
+                  <span>Товар</span>
+                  <b>{stockViewSuccessDialog.itemName}</b>
+                </div>
+                <div className="cashTopupConfirmAmount">
+                  <span>Количество</span>
+                  <b>{stockViewSuccessDialog.qty}</b>
+                </div>
+                <div className="cashTopupConfirmActions">
+                  <button className="secondary" onClick={() => setStockViewSuccessDialog(null)}>
+                    Новая операция
+                  </button>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setStockViewSuccessDialog(null)
+                      setStockViewDialogOpen(false)
+                    }}
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {stockDialogOpen && (
           <div className="qtyOverlay stockOverlay">
@@ -3048,32 +5580,11 @@ function App() {
               </div>
 
               <div className="stockForm">
-                <div className="stockInlineRow stockFull">
-                  <div className="stockField">
-                    <label>Код товара</label>
+                <div className="stockSearchBlock stockFull productSelectorBlock">
+                  <label>Товар</label>
+                  <div className="stockSearchRow productSelectorSearchRow">
                     <input
-                      value={stockForm.item}
-                      onChange={(e) => updateStockField('item', e.target.value)}
-                      placeholder="Например 2811"
-                      inputMode="numeric"
-                    />
-                  </div>
-
-                  <div className="stockField">
-                    <label>Количество прихода</label>
-                    <input
-                      value={stockForm.qty_delta}
-                      onChange={(e) => updateStockField('qty_delta', e.target.value)}
-                      placeholder="Например 1 или 1.250"
-                      inputMode="decimal"
-                    />
-                  </div>
-                </div>
-
-                <div className="stockSearchBlock stockFull">
-                  <label>Поиск товара</label>
-                  <div className="stockSearchRow">
-                    <input
+                      ref={stockSearchInputRef}
                       value={stockSearchQuery}
                       onChange={(e) => setStockSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
@@ -3081,7 +5592,7 @@ function App() {
                           loadStockSearchItems(stockSearchQuery)
                         }
                       }}
-                      placeholder="Введите код, название, категорию или подкатегорию"
+                      placeholder="ID, штрихкод или название товара"
                     />
                     <button
                       className="primary"
@@ -3092,37 +5603,178 @@ function App() {
                     </button>
                     <button
                       className="secondary"
-                      onClick={() => {
-                        setStockSearchQuery('')
-                        loadStockSearchItems('')
-                      }}
+                      onClick={() => openItemPicker('stockReceipt')}
                     >
-                      Все
+                      Выбрать товар
                     </button>
                   </div>
 
-                  <div className="stockSearchResults">
-                    {stockSearchItems.map((item) => (
+                  {stockSelectedItem && (
+                    <div className="selectedProductCard">
+                      <div className="itemPhoto">
+                        {stockSelectedItem.photo_url ? (
+                          <img src={stockSelectedItem.photo_url} alt="" />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+                      <div>
+                        <b>{stockSelectedItem.item_name}</b>
+                        <span>Код {stockSelectedItem.item} · {getProductKindLabel(stockSelectedItem)}</span>
+                        <span>Остаток: {formatQty(stockSelectedItem.item_stock, stockSelectedItem.isfractional)} · Доступно: {formatQty(stockSelectedItem.available_qty, stockSelectedItem.isfractional)}</span>
+                      </div>
                       <button
-                        key={item.item}
-                        className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
-                        onClick={() => selectStockItem(item)}
+                        type="button"
+                        className="secondary smallButton"
+                        onClick={changeStockSelectedItem}
                       >
-                        <div>
-                          <b>{item.item_name}</b>
-                          <span>Код {item.item} · {item.item_category || 'Без категории'}</span>
-                        </div>
-                        <div>
-                          <b>{formatMoney(item.price)}</b>
-                          <span>Остаток: {formatQty(item.item_stock, item.item_type)}</span>
-                        </div>
+                        Сменить товар
                       </button>
-                    ))}
+                    </div>
+                  )}
 
-                    {stockSearchItems.length === 0 && (
-                      <div className="emptyBox">Товары не найдены</div>
-                    )}
-                  </div>
+                  {stockSearchItems.length > 0 && (
+                    <div className="stockSearchResults">
+                      {stockSearchItems.map((item) => (
+                        <button
+                          key={item.item}
+                          className={String(item.item) === stockForm.item ? 'stockSearchItem selected' : 'stockSearchItem'}
+                          onClick={() => selectStockItem(item)}
+                        >
+                          <div>
+                            <b>{item.item_name}</b>
+                            <span>Код {item.item} · {getProductKindLabel(item)}</span>
+                          </div>
+                          <div>
+                            <b>{formatMoney(item.price)}</b>
+                            <span>Остаток: {formatQty(item.item_stock, item.isfractional)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="stockField stockFull stockQtyBlock">
+                  <label>Количество прихода</label>
+
+                  {!stockSelectedItem ? (
+                    <div className="emptyBox stockQtyHint">
+                      Сначала выберите товар. После выбора откроется клавиатура количества: для штучного товара без точки, для весового — с десятичной точкой.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="qtyControl stockQtyControl">
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(-1)}
+                          disabled={stockLoading}
+                        >
+                          -
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyDisplay"
+                          aria-label="Количество прихода"
+                          onClick={() => setStockQtyCaretIndex(String(stockForm.qty_delta || '').length)}
+                        >
+                          {String(stockForm.qty_delta || '0').split('').map((char, index) => (
+                            <span
+                              key={`${char}-${index}`}
+                              className="qtyDigitSlot"
+                              onClick={(e) => {
+                                e.stopPropagation()
+
+                                if (!stockForm.qty_delta) {
+                                  setStockQtyCaretIndex(0)
+                                  return
+                                }
+
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const nextIndex = e.clientX - rect.left < rect.width / 2 ? index : index + 1
+
+                                setStockQtyCaretIndex(nextIndex)
+                              }}
+                            >
+                              {stockForm.qty_delta && stockQtyCaretIndex === index && <span className="qtyCaret" />}
+                              {char}
+                            </span>
+                          ))}
+                          {stockForm.qty_delta && stockQtyCaretIndex >= String(stockForm.qty_delta).length && <span className="qtyCaret" />}
+                          {!stockForm.qty_delta && <span className="qtyCaret" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="primary qtyBtn"
+                          onClick={() => changeStockQtyDraft(1)}
+                          disabled={stockLoading}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <div className="qtyKeypad stockQtyKeypad" aria-label="Цифровая клавиатура прихода">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                          <button
+                            key={digit}
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={() => appendStockQtyDigit(digit)}
+                            disabled={stockLoading}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn secondary"
+                          onClick={backspaceStockQtyDraft}
+                          disabled={stockLoading}
+                        >
+                          ←
+                        </button>
+
+                        <button
+                          type="button"
+                          className="qtyKeyBtn"
+                          onClick={() => appendStockQtyDigit('0')}
+                          disabled={stockLoading}
+                        >
+                          0
+                        </button>
+
+                        {stockSelectedItem.isfractional ? (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn"
+                            onClick={appendStockQtyDot}
+                            disabled={stockLoading}
+                          >
+                            .
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="qtyKeyBtn secondary"
+                            onClick={clearStockQtyDraft}
+                            disabled={stockLoading}
+                          >
+                            C
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="muted stockQtyKindHint">
+                        {stockSelectedItem.isfractional
+                          ? `Весовой товар: можно вводить дробное количество, ${stockSelectedItem.unit || stockSelectedItem.pack || 'кг'}`
+                          : 'Штучный товар: ввод только целыми числами'}
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <label className="stockFull">Комментарий</label>
@@ -3141,7 +5793,7 @@ function App() {
                 <button className="secondary" onClick={() => setStockDialogOpen(false)} disabled={stockLoading}>
                   Закрыть
                 </button>
-                <button className="primary" onClick={stockReceipt} disabled={stockLoading}>
+                <button className="primary" onClick={stockReceipt} disabled={stockLoading || !stockForm.item}>
                   {stockLoading ? 'Оприходуем...' : 'Оприходовать'}
                 </button>
               </div>
@@ -3295,6 +5947,190 @@ function App() {
           </div>
         )}
 
+        {cashQrDialog && foundUser && (
+          <div className="qtyOverlay">
+            <div className="qtyDialog cashQrDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Пополнение П/С через СБП</h2>
+                  <p className="muted">Пайщик {foundUser.user_account}</p>
+                </div>
+                <button className="secondary" onClick={closeCashQrDialog} disabled={cashQrLoading}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="qtyDialogBody">
+                <div className="cashTopupConfirmAmount">
+                  <span>Сумма пополнения</span>
+                  <b>{formatMoney(cashQrDialog.amount)}</b>
+                </div>
+
+                <div className="cashQrImageBox">
+                  {cashQrDialog.qr_base64 ? (
+                    <img
+                      src={buildQrImageSrc(cashQrDialog.qr_base64, cashQrDialog.image_type)}
+                      alt="QR для пополнения баланса"
+                    />
+                  ) : (
+                    <div className="emptyBox">QR-картинка недоступна</div>
+                  )}
+                </div>
+
+                <p className="muted cashQrHint">
+                  Проверяем баланс пайщика каждые 30 секунд. QR действует {cashQrDialog.ttl} мин.
+                </p>
+
+                {cashQrDialog.qr_url && (
+                  <p className="muted cashQrUrl">{cashQrDialog.qr_url}</p>
+                )}
+
+                <div className="qtyActions">
+                  <button className="secondary" onClick={closeCashQrDialog} disabled={cashQrLoading}>
+                    Закрыть
+                  </button>
+                  <button className="primary" onClick={openCashQrTopup} disabled={cashQrLoading || sbpLoading}>
+                    {cashQrLoading || sbpLoading ? 'Формируем...' : 'Сформировать заново'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cashoutCheckDialog && foundUser && (
+          <div className="qtyOverlay">
+            <div className="cashTopupConfirmDialog cashoutPinDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Подтвердить выдачу</h2>
+                  <p className="muted">Введите PIN-код пайщика</p>
+                </div>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setCashoutCheckDialog(null)
+                    setCashoutPin('')
+                    if (mainKeypadTarget === 'cashoutPin') setMainKeypadTarget(null)
+                  }}
+                  disabled={cashoutLoading}
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                <div className="cashTopupConfirmRow">
+                  <span>Пайщик</span>
+                  <b>{foundUser.user_account}</b>
+                </div>
+
+                <div className="cashTopupConfirmAmount">
+                  <span>Сумма выдачи</span>
+                  <b>{formatMoney(cashoutCheckDialog.amount)}</b>
+                </div>
+
+                <div className="cashTopupConfirmRow">
+                  <span>С учетом комиссии</span>
+                  <b>{formatMoney(cashoutCheckDialog.amountwithcomission)}</b>
+                </div>
+
+                <label>PIN-код</label>
+                <input
+                  value={cashoutPin}
+                  onChange={(e) => setCashoutPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onFocus={() => {
+                    if (shouldUseTouchKeypad()) setMainKeypadTarget('cashoutPin')
+                  }}
+                  onClick={() => {
+                    if (shouldUseTouchKeypad()) setMainKeypadTarget('cashoutPin')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void cashout()
+                    }
+                  }}
+                  type={shouldUseTouchKeypad() ? 'text' : 'password'}
+                  readOnly={shouldUseTouchKeypad()}
+                  inputMode={shouldUseTouchKeypad() ? 'none' : 'numeric'}
+                  enterKeyHint="done"
+                  maxLength={4}
+                  placeholder="4 цифры"
+                />
+
+                {error && <div className="error">{error}</div>}
+
+                <div className="cashTopupConfirmActions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setCashoutCheckDialog(null)
+                      setCashoutPin('')
+                      if (mainKeypadTarget === 'cashoutPin') setMainKeypadTarget(null)
+                    }}
+                    disabled={cashoutLoading}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={cashout}
+                    disabled={cashoutLoading || cashoutPin.length !== 4}
+                  >
+                    {cashoutLoading ? 'Выдаем...' : 'Выдать'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cashSuccessDialog && (
+          <div className="qtyOverlay">
+            <div className="cashTopupConfirmDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>{cashSuccessDialog.title}</h2>
+                  <p className="muted">{cashSuccessDialog.text}</p>
+                </div>
+                <button className="secondary" onClick={() => setCashSuccessDialog(null)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                {cashSuccessDialog.customerbalance !== undefined && (
+                  <div className="cashTopupConfirmRow">
+                    <span>Баланс пайщика</span>
+                    <b>{formatMoney(cashSuccessDialog.customerbalance)}</b>
+                  </div>
+                )}
+                {cashSuccessDialog.cashierbalance !== undefined && (
+                  <div className="cashTopupConfirmRow">
+                    <span>П/С владельца ТВТ</span>
+                    <b>{formatMoney(cashSuccessDialog.cashierbalance)}</b>
+                  </div>
+                )}
+                {cashSuccessDialog.moneyincashbox !== undefined && (
+                  <div className="cashTopupConfirmRow">
+                    <span>Нал. в кассе</span>
+                    <b>{formatMoney(cashSuccessDialog.moneyincashbox)}</b>
+                  </div>
+                )}
+
+                <div className="cashTopupConfirmActions">
+                  <button className="primary" onClick={() => setCashSuccessDialog(null)}>
+                    ОК
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {txDialogOpen && (
           <div className="itemPickerOverlay">
             <div className="itemPicker">
@@ -3349,7 +6185,7 @@ function App() {
           </div>
         )}
 
-        {sbpDialogOpen && !orderDetails && (
+        {false && sbpDialogOpen && !orderDetails && (
           <div className="qtyOverlay">
             <div className="qtyDialog">
               <div className="qtyDialogHeader">
@@ -3504,6 +6340,8 @@ function App() {
             </div>
 
             {error && <div className="error">{error}</div>}
+            {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
+            {cashOperationMessage && <div className="notice">{cashOperationMessage}</div>}
             {orderLoading && <div className="notice">Открываем заказ...</div>}
 
             <div className="infoGrid">
@@ -3531,7 +6369,7 @@ function App() {
 
             <div className="bottomActions">
               <div className="sumBox">
-                <label>Сумма пополнения</label>
+                <label>Сумма операции</label>
                 <input
                   value={cashTopupAmount}
                   onChange={(e) => setCashTopupAmount(e.target.value)}
@@ -3565,17 +6403,17 @@ function App() {
               </button>
               <button
                 className="secondary"
-                onClick={() => {
-                  if (!foundUser) {
-                    setError('Сначала найдите пайщика')
-                    return
-                  }
-                  setSbpAmount('')
-                  setSbpMessage('СБП-заглушка для пополнения П/С пайщика')
-                  setSbpDialogOpen(true)
-                }}
+                onClick={openCashQrTopup}
+                disabled={!foundUser || sbpLoading || cashQrLoading}
               >
-                СБП
+                {sbpLoading || cashQrLoading ? 'QR...' : 'СБП'}
+              </button>
+              <button
+                className="secondary"
+                onClick={openCashoutCheck}
+                disabled={!foundUser || cashoutLoading}
+              >
+                {cashoutLoading ? 'Проверяем...' : 'Выдать'}
               </button>
               <button
                 className="secondary"
@@ -3591,11 +6429,11 @@ function App() {
             <div className="balanceStrip">
               <div>
                 <span>П/С владельца ТВТ</span>
-                <b>{formatMoney(storeState?.owner_balance ?? selectedStore.owner_balance)}</b>
+                <b>{formatMoney(ownerBalance)}</b>
               </div>
               <div>
                 <span>Нал. в кассе</span>
-                <b>{formatMoney(storeState?.cash_balance)}</b>
+                <b>{formatMoney(cashBalance)}</b>
               </div>
               <div>
                 <span>Лимит</span>
@@ -3627,14 +6465,20 @@ function App() {
               {orders.map((order) => (
                 <div
                   key={order.order_number}
-                  className={
-                    order.order_number === selectedOrderNumber
-                      ? 'orderCard selected'
-                      : 'orderCard'
-                  }
-                  onClick={() => openOrder(order.order_number)}
+                  className={[
+                    order.order_number === selectedOrderNumber ? 'orderCard selected' : 'orderCard',
+                    isOrderCancelable(order) ? 'orderCardSwipeable' : '',
+                    orderSwipeDragNumber === order.order_number ? 'orderCardSwiping' : '',
+                  ].filter(Boolean).join(' ')}
+                  style={getOrderCardSwipeStyle(order.order_number, orderSwipeDragNumber, orderSwipeDragX)}
+                  onPointerDown={(e) => handleOrderPointerDown(e, order)}
+                  onPointerMove={(e) => handleOrderPointerMove(e, order)}
+                  onPointerUp={(e) => handleOrderPointerUp(e, order)}
+                  onPointerCancel={handleOrderPointerCancel}
+                  onClick={() => handleOrderCardClick(order)}
                   role="button"
                   tabIndex={0}
+                  title={isOrderCancelable(order) ? 'Свайп вправо или влево — удалить заказ' : undefined}
                 >
                   <div>
                     <b>Заказ № {order.order_number}</b>
@@ -3642,17 +6486,6 @@ function App() {
                   </div>
                   <div className="orderCardRight">
                     <div className="orderCardAmountRow">
-                      {order.status === 'in_progress' && (
-                        <button
-                          className="deleteOrderButton"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setDeleteOrderDialog(order)
-                          }}
-                        >
-                          Удалить
-                        </button>
-                      )}
                       <b>{formatMoney(order.order_sum)}</b>
                     </div>
                     <span>{order.delivery_date || 'без даты'}</span>
@@ -3681,18 +6514,21 @@ function App() {
                 <button
                   key={store.store_id}
                   className="storeButton"
-                  onClick={() => setSelectedStore(store)}
+                  onClick={() => selectStore(store).catch((e: any) => {
+                    setError(e.message || 'Ошибка выбора точки выдачи')
+                  })}
+                  disabled={storeSelectLoading}
                 >
                   <span className="storeName">{store.store_name}</span>
                   <span className="storeAddress">{store.store_address || 'Адрес не указан'}</span>
                   <span className="storeMeta">
-                    ТВТ {store.store_id} · Владелец {store.owner_account ?? '—'}
+                    ТВТ {store.store_id} · Склад {store.default_warehouse ?? '—'} · Владелец {store.owner_account ?? '—'}
                   </span>
                 </button>
               ))}
             </div>
 
-            <button className="secondary full" onClick={logoutCashier}>
+            <button className="secondary full" onClick={logoutCashier} disabled={storeSelectLoading}>
               Выйти
             </button>
           </div>
@@ -3711,7 +6547,12 @@ function App() {
           <input
             value={cashierAccount}
             onChange={(e) => setCashierAccount(e.target.value)}
-            inputMode="numeric"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') login()
+            }}
+            type="text"
+            autoComplete="username"
+            name="cashier_login"
           />
 
           <label>Пароль</label>
