@@ -4,6 +4,8 @@ import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
 type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | 'cashoutPin' | null
+type SearchInputSource = 'main' | 'keypad'
+type TextSelectionRange = { start: number; end: number }
 type SideMenuTab = 'root' | 'shareholder' | 'stock' | 'chats' | 'reports' | 'settings'
 
 type CashierSettings = {
@@ -731,6 +733,11 @@ function App() {
   const lastTopbarTapAt = useRef(0)
 
   const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const mainKeypadValueInputRef = useRef<HTMLInputElement | null>(null)
+  const activeSearchInputSourceRef = useRef<SearchInputSource>('main')
+  const searchCaretRangeRef = useRef<TextSelectionRange>({ start: 0, end: 0 })
+  const isRestoringSearchCaretRef = useRef(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null)
   const [ownerBalance, setOwnerBalance] = useState<number>(0)
@@ -1094,9 +1101,140 @@ function App() {
     )
   }
 
+  function normalizeSearchValue(value: string) {
+    return String(value || '').replace(/\D/g, '')
+  }
+
+  function clampTextSelectionRange(start: number, end: number, valueLength: number): TextSelectionRange {
+    const safeStart = Math.max(0, Math.min(start, valueLength))
+    const safeEnd = Math.max(safeStart, Math.min(end, valueLength))
+
+    return { start: safeStart, end: safeEnd }
+  }
+
+  function getInputSelectionRange(input: HTMLInputElement | null, fallbackLength: number): TextSelectionRange {
+    if (!input) {
+      return { start: fallbackLength, end: fallbackLength }
+    }
+
+    const selectionStart = input.selectionStart ?? fallbackLength
+    const selectionEnd = input.selectionEnd ?? selectionStart
+
+    return clampTextSelectionRange(selectionStart, selectionEnd, fallbackLength)
+  }
+
+  function setStoredSearchCaretRange(range: TextSelectionRange) {
+    searchCaretRangeRef.current = range
+  }
+
+  function restoreSearchCaret(range: TextSelectionRange, source?: SearchInputSource) {
+    const targetSource = source || activeSearchInputSourceRef.current
+    setStoredSearchCaretRange(range)
+
+    window.requestAnimationFrame(() => {
+      const input = targetSource === 'keypad' ? mainKeypadValueInputRef.current : searchInputRef.current
+
+      if (!input) return
+
+      isRestoringSearchCaretRef.current = true
+
+      try {
+        input.focus({ preventScroll: true })
+        input.setSelectionRange(range.start, range.end)
+      } catch {
+        // Некоторые мобильные браузеры могут отказать в установке курсора.
+      }
+
+      window.setTimeout(() => {
+        isRestoringSearchCaretRef.current = false
+      }, 0)
+    })
+  }
+
+  function rememberSearchCaret(input: HTMLInputElement | null, source: SearchInputSource) {
+    if (isRestoringSearchCaretRef.current) return
+
+    activeSearchInputSourceRef.current = source
+
+    const currentLength = input ? String(input.value || '').length : normalizeSearchValue(searchQuery).length
+    const range = getInputSelectionRange(input, currentLength)
+
+    setStoredSearchCaretRange(range)
+  }
+
+  function handleSearchInputChange(value: string, input: HTMLInputElement, source: SearchInputSource) {
+    activeSearchInputSourceRef.current = source
+
+    const rawSelectionStart = input.selectionStart ?? value.length
+    const rawSelectionEnd = input.selectionEnd ?? rawSelectionStart
+    const next = normalizeSearchValue(value)
+    const nextRange = clampTextSelectionRange(
+      normalizeSearchValue(value.slice(0, rawSelectionStart)).length,
+      normalizeSearchValue(value.slice(0, rawSelectionEnd)).length,
+      next.length,
+    )
+
+    setSearchQuery(next)
+    setStoredSearchCaretRange(nextRange)
+
+    if (next !== value) {
+      restoreSearchCaret(nextRange, source)
+    }
+  }
+
+  function setSearchQueryFromKeypad(nextValue: string, nextRange: TextSelectionRange) {
+    const normalized = normalizeSearchValue(nextValue)
+    const clampedRange = clampTextSelectionRange(nextRange.start, nextRange.end, normalized.length)
+
+    setSearchQuery(normalized)
+    restoreSearchCaret(clampedRange)
+  }
+
+  function insertSearchKeypadValue(value: string) {
+    const current = normalizeSearchValue(searchQuery)
+    const range = clampTextSelectionRange(
+      searchCaretRangeRef.current.start,
+      searchCaretRangeRef.current.end,
+      current.length,
+    )
+    const insertValue = normalizeSearchValue(value)
+
+    if (!insertValue) return
+
+    const next = `${current.slice(0, range.start)}${insertValue}${current.slice(range.end)}`
+    const nextCaret = range.start + insertValue.length
+
+    setSearchQueryFromKeypad(next, { start: nextCaret, end: nextCaret })
+  }
+
+  function backspaceSearchKeypadValue() {
+    const current = normalizeSearchValue(searchQuery)
+    const range = clampTextSelectionRange(
+      searchCaretRangeRef.current.start,
+      searchCaretRangeRef.current.end,
+      current.length,
+    )
+
+    if (range.start !== range.end) {
+      const next = `${current.slice(0, range.start)}${current.slice(range.end)}`
+      setSearchQueryFromKeypad(next, { start: range.start, end: range.start })
+      return
+    }
+
+    if (range.start <= 0) {
+      setSearchQueryFromKeypad(current, { start: 0, end: 0 })
+      return
+    }
+
+    const next = `${current.slice(0, range.start - 1)}${current.slice(range.start)}`
+    const nextCaret = range.start - 1
+
+    setSearchQueryFromKeypad(next, { start: nextCaret, end: nextCaret })
+  }
+
   function appendMainKeypadValue(value: string) {
     if (mainKeypadTarget === 'search') {
-      setSearchQuery((current) => `${current || ''}${value}`.replace(/\D/g, ''))
+      insertSearchKeypadValue(value)
       return
     }
 
@@ -1137,7 +1275,7 @@ function App() {
 
   function backspaceMainKeypadValue() {
     if (mainKeypadTarget === 'search') {
-      setSearchQuery((current) => String(current || '').slice(0, -1))
+      backspaceSearchKeypadValue()
       return
     }
 
@@ -1158,7 +1296,7 @@ function App() {
 
   function clearMainKeypadValue() {
     if (mainKeypadTarget === 'search') {
-      setSearchQuery('')
+      setSearchQueryFromKeypad('', { start: 0, end: 0 })
       return
     }
 
@@ -1240,9 +1378,26 @@ function App() {
     return (
       <div className="mainKeypadPanel">
         <div className="mainKeypadHeader">
-          <div>
+          <div className="mainKeypadValueBox">
             <b>{title}</b>
-            <span>{value || '0'}</span>
+            {mainKeypadTarget === 'search' ? (
+              <input
+                ref={mainKeypadValueInputRef}
+                className="mainKeypadValueInput"
+                type="text"
+                value={value}
+                placeholder="0"
+                inputMode="none"
+                autoComplete="off"
+                onFocus={(e) => rememberSearchCaret(e.currentTarget, 'keypad')}
+                onClick={(e) => rememberSearchCaret(e.currentTarget, 'keypad')}
+                onKeyUp={(e) => rememberSearchCaret(e.currentTarget, 'keypad')}
+                onSelect={(e) => rememberSearchCaret(e.currentTarget, 'keypad')}
+                onChange={(e) => handleSearchInputChange(e.target.value, e.currentTarget, 'keypad')}
+              />
+            ) : (
+              <span>{value || '0'}</span>
+            )}
           </div>
           <button className="secondary" type="button" onClick={() => setMainKeypadTarget(null)}>
             Скрыть
@@ -6303,20 +6458,26 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
             <div className="searchRow">
               <input
+                ref={searchInputRef}
                 className="bigInput"
                 placeholder="№ П/С, телефон или номер заказа"
                 value={searchQuery}
-                readOnly={shouldUseTouchKeypad()}
                 inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
                 autoComplete="off"
                 enterKeyHint="search"
-                onFocus={() => {
+                onFocus={(e) => {
+                  activeSearchInputSourceRef.current = 'main'
+                  rememberSearchCaret(e.currentTarget, 'main')
                   if (shouldUseTouchKeypad()) setMainKeypadTarget('search')
                 }}
-                onClick={() => {
+                onClick={(e) => {
+                  activeSearchInputSourceRef.current = 'main'
+                  rememberSearchCaret(e.currentTarget, 'main')
                   if (shouldUseTouchKeypad()) setMainKeypadTarget('search')
                 }}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyUp={(e) => rememberSearchCaret(e.currentTarget, 'main')}
+                onSelect={(e) => rememberSearchCaret(e.currentTarget, 'main')}
+                onChange={(e) => handleSearchInputChange(e.target.value, e.currentTarget, 'main')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') searchUser()
                 }}
@@ -6328,6 +6489,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                 className="secondary"
                 onClick={() => {
                   setSearchQuery('')
+                  searchCaretRangeRef.current = { start: 0, end: 0 }
                   setFoundUser(null)
                   setOrders([])
                   setStoreState(null)
