@@ -3179,16 +3179,32 @@ async function openOrder(orderNumber: number) {
 
     try {
       updateOrderLinesLocally((lines) => {
-        const existingIndex = lines.findIndex((line) => line.item === item.item || line.good_id === item.item)
+        const activeIndex = lines.findIndex(
+          (line) =>
+            (line.item === item.item || line.good_id === item.item) &&
+            toNumber(line.qty_final, 0) > 0
+        )
 
-        if (existingIndex >= 0) {
+        if (activeIndex >= 0) {
           return lines.map((line, index) => {
-            if (index !== existingIndex) return line
+            if (index !== activeIndex) return line
 
             const step = 1
             const nextQty = toNumber(line.qty_final, 0) + step
             return recalcOrderLine(line, nextQty)
           })
+        }
+
+        const deletedIndex = lines.findIndex(
+          (line) =>
+            (line.item === item.item || line.good_id === item.item) &&
+            toNumber(line.qty_final, 0) <= 0
+        )
+
+        if (deletedIndex >= 0) {
+          return lines.map((line, index) =>
+            index === deletedIndex ? mapStoreItemToOrderLine(item) : line
+          )
         }
 
         return [...lines, mapStoreItemToOrderLine(item)]
