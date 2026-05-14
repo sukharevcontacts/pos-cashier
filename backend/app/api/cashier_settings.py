@@ -1,17 +1,17 @@
-import json
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.db_methods_pg import (
+    get_pos_cashier_settings,
+    save_pos_cashier_settings,
+)
 
 
 router = APIRouter(prefix="/cashier/settings", tags=["cashier-settings"])
 
-ScreenProfile = Literal["auto", "tablet_10"]
+ScreenProfile = Literal["auto", "tablet_10", "tablet_7"]
 
 
 class CashierSettingsRequest(BaseModel):
@@ -20,9 +20,9 @@ class CashierSettingsRequest(BaseModel):
     settings_json: dict[str, Any] = Field(default_factory=dict)
 
 
-def default_settings(cashier_account: int) -> dict[str, Any]:
+def default_settings(cashier_account: str) -> dict[str, Any]:
     return {
-        "cashier_account": cashier_account,
+        "cashier_account": str(cashier_account),
         "screen_profile": "auto",
         "appearance_theme": "default",
         "settings_json": {},
@@ -31,113 +31,55 @@ def default_settings(cashier_account: int) -> dict[str, Any]:
 
 @router.get("/{cashier_account}")
 async def get_cashier_settings(
-    cashier_account: int,
-    db: AsyncSession = Depends(get_db),
+    cashier_account: str,
 ):
-    cashier_result = await db.execute(
-        text("""
-            SELECT cashier_account
-            FROM coop.pos_cashiers
-            WHERE cashier_account = :cashier_account
-              AND is_active = TRUE
-            LIMIT 1
-        """),
-        {"cashier_account": cashier_account},
-    )
+    result = await get_pos_cashier_settings(str(cashier_account))
 
-    if not cashier_result.mappings().first():
-        raise HTTPException(status_code=404, detail="Кассир не найден")
+    if result is False:
+        raise HTTPException(
+            status_code=500,
+            detail="Ошибка получения настроек кассира",
+        )
 
-    result = await db.execute(
-        text("""
-            SELECT
-                cashier_account,
-                screen_profile,
-                appearance_theme,
-                settings_json
-            FROM coop.pos_cashier_settings
-            WHERE cashier_account = :cashier_account
-            LIMIT 1
-        """),
-        {"cashier_account": cashier_account},
-    )
-
-    row = result.mappings().first()
-
-    if not row:
-        return default_settings(cashier_account)
+    if not result:
+        return default_settings(str(cashier_account))
 
     return {
-        "cashier_account": row["cashier_account"],
-        "screen_profile": row["screen_profile"] or "auto",
-        "appearance_theme": row["appearance_theme"] or "default",
-        "settings_json": row["settings_json"] or {},
+        "cashier_account": str(result.get("cashier_account") or cashier_account),
+        "screen_profile": result.get("screen_profile") or "auto",
+        "appearance_theme": result.get("appearance_theme") or "default",
+        "settings_json": result.get("settings_json") or {},
     }
 
 
 @router.post("/{cashier_account}")
 async def save_cashier_settings(
-    cashier_account: int,
+    cashier_account: str,
     payload: CashierSettingsRequest,
-    db: AsyncSession = Depends(get_db),
 ):
-    cashier_result = await db.execute(
-        text("""
-            SELECT cashier_account
-            FROM coop.pos_cashiers
-            WHERE cashier_account = :cashier_account
-              AND is_active = TRUE
-            LIMIT 1
-        """),
-        {"cashier_account": cashier_account},
+    result = await save_pos_cashier_settings(
+        cashier_account=str(cashier_account),
+        screen_profile=payload.screen_profile or "auto",
+        appearance_theme=payload.appearance_theme or "default",
+        settings_json=payload.settings_json or {},
     )
 
-    if not cashier_result.mappings().first():
-        raise HTTPException(status_code=404, detail="Кассир не найден")
+    if result is False:
+        raise HTTPException(
+            status_code=500,
+            detail="Ошибка сохранения настроек кассира",
+        )
 
-    result = await db.execute(
-        text("""
-            INSERT INTO coop.pos_cashier_settings (
-                cashier_account,
-                screen_profile,
-                appearance_theme,
-                settings_json,
-                updated_at
-            )
-            VALUES (
-                :cashier_account,
-                :screen_profile,
-                :appearance_theme,
-                CAST(:settings_json AS jsonb),
-                now()
-            )
-            ON CONFLICT (cashier_account) DO UPDATE SET
-                screen_profile = EXCLUDED.screen_profile,
-                appearance_theme = EXCLUDED.appearance_theme,
-                settings_json = EXCLUDED.settings_json,
-                updated_at = now()
-            RETURNING
-                cashier_account,
-                screen_profile,
-                appearance_theme,
-                settings_json
-        """),
-        {
-            "cashier_account": cashier_account,
-            "screen_profile": payload.screen_profile,
-            "appearance_theme": payload.appearance_theme,
-            "settings_json": json.dumps(payload.settings_json, ensure_ascii=False),
-        },
-    )
-
-    await db.commit()
-
-    row = result.mappings().one()
+    if not result:
+        raise HTTPException(
+            status_code=500,
+            detail="Настройки кассира не были сохранены",
+        )
 
     return {
         "ok": True,
-        "cashier_account": row["cashier_account"],
-        "screen_profile": row["screen_profile"],
-        "appearance_theme": row["appearance_theme"],
-        "settings_json": row["settings_json"] or {},
+        "cashier_account": str(result.get("cashier_account") or cashier_account),
+        "screen_profile": result.get("screen_profile") or "auto",
+        "appearance_theme": result.get("appearance_theme") or "default",
+        "settings_json": result.get("settings_json") or {},
     }
