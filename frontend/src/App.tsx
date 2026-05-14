@@ -3970,7 +3970,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
       }
 
       setCashQrDialog({
-        amount: Number(data.amount || amount),
+		amount: Number(data.amount ? Number(data.amount) / 100 : amount),
         old_balance: Number(user.balance || 0),
         qr_base64: qrBase64,
         image_type: String(data.image_type || 'image/png'),
@@ -3997,7 +3997,9 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
     const { amount, user, store } = base
 
-    const cashInBox = Number(storeState?.cash_balance ?? cashBalance ?? 0)
+    // Реальный остаток наличных в кассе берем только из /cashier/status
+    // (/cashier/search содержит legacy-поля store.cash_balance/owner_balance и может возвращать 0/null).
+    const cashInBox = Number(cashBalance || 0)
     if (cashInBox < amount) {
       setError('Недостаточно средств в кассе')
       return
@@ -6367,7 +6369,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
             <div className="bottomActions">
               <div className="sumBox">
-                <label>Сумма пополнения</label>
+                <label>Сумма операции</label>
                 <input
                   value={cashTopupAmount}
                   onChange={(e) => setCashTopupAmount(e.target.value)}

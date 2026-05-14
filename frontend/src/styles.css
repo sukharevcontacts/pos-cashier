@@ -3577,3 +3577,25 @@ body[data-screen-profile="tablet_10"] .stockWorkActions {
     overflow-y: auto;
   }
 }
+
+
+/* Основной экран: только на широком ПК сумма пополнения отдельной строкой,
+   планшет/мобильная адаптация остаются в прежней одной строке. */
+@media (min-width: 1101px) {
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions {
+    grid-template-columns: repeat(4, minmax(110px, 1fr));
+    align-items: end;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions .sumBox {
+    grid-column: 1 / -1;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions .sumBox label {
+    white-space: nowrap;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen .bottomActions button {
+    min-height: 56px;
+  }
+}
