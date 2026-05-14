@@ -3,7 +3,7 @@ import introImage from './assets/intro.jpg'
 import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
-type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | null
+type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | 'cashoutPin' | null
 type SideMenuTab = 'root' | 'shareholder' | 'stock' | 'chats' | 'reports' | 'settings'
 
 type CashierSettings = {
@@ -44,6 +44,7 @@ function toSafeInt(value: unknown, fallback = 0) {
 function getErrorMessage(data: any, fallback: string) {
   if (!data?.detail) return fallback
   if (typeof data.detail === 'string') return data.detail
+  if (data.detail?.error) return String(data.detail.error)
   if (Array.isArray(data.detail)) {
     return data.detail.map((item: any) => item?.msg || JSON.stringify(item)).join('; ') || fallback
   }
@@ -105,6 +106,32 @@ type OrderPaymentQrDialog = {
   qr_url: string | null
   ttl: number
   created_at: number
+}
+
+type CashQrDialog = {
+  amount: number
+  old_balance: number
+  qr_base64: string
+  image_type: string
+  qr_url: string | null
+  ttl: number
+  created_at: number
+}
+
+type CashoutCheckDialog = {
+  amount: number
+  amountwithcomission: number
+  customerbalance: number
+  cashierbalance: number
+  moneyincashbox: number
+}
+
+type CashSuccessDialog = {
+  title: string
+  text: string
+  customerbalance?: number
+  cashierbalance?: number
+  moneyincashbox?: number
 }
 
 type UserTransactionRow = {
@@ -718,6 +745,13 @@ function App() {
   const [cashTopupLoading, setCashTopupLoading] = useState(false)
   const [cashTopupConfirmOpen, setCashTopupConfirmOpen] = useState(false)
   const cashTopupConfirmOpenedAtRef = useRef(0)
+  const [cashOperationMessage, setCashOperationMessage] = useState('')
+  const [cashSuccessDialog, setCashSuccessDialog] = useState<CashSuccessDialog | null>(null)
+  const [cashQrDialog, setCashQrDialog] = useState<CashQrDialog | null>(null)
+  const [cashQrLoading, setCashQrLoading] = useState(false)
+  const [cashoutCheckDialog, setCashoutCheckDialog] = useState<CashoutCheckDialog | null>(null)
+  const [cashoutPin, setCashoutPin] = useState('')
+  const [cashoutLoading, setCashoutLoading] = useState(false)
 
   const [newUserDialogOpen, setNewUserDialogOpen] = useState(false)
   const [newUserLoading, setNewUserLoading] = useState(false)
@@ -1066,6 +1100,12 @@ function App() {
       return
     }
 
+    if (mainKeypadTarget === 'cashoutPin') {
+      if (value === '.') return
+      setCashoutPin((current) => `${current || ''}${value}`.replace(/\D/g, '').slice(0, 4))
+      return
+    }
+
     if (mainKeypadTarget === 'cashTopup' || mainKeypadTarget === 'sbpTopup') {
       const setter = mainKeypadTarget === 'cashTopup' ? setCashTopupAmount : setSbpAmount
 
@@ -1106,6 +1146,11 @@ function App() {
       return
     }
 
+    if (mainKeypadTarget === 'cashoutPin') {
+      setCashoutPin((current) => String(current || '').slice(0, -1))
+      return
+    }
+
     if (mainKeypadTarget === 'sbpTopup') {
       setSbpAmount((current) => String(current || '').slice(0, -1))
     }
@@ -1119,6 +1164,11 @@ function App() {
 
     if (mainKeypadTarget === 'cashTopup') {
       setCashTopupAmount('')
+      return
+    }
+
+    if (mainKeypadTarget === 'cashoutPin') {
+      setCashoutPin('')
       return
     }
 
@@ -1140,6 +1190,12 @@ function App() {
       return
     }
 
+    if (mainKeypadTarget === 'cashoutPin') {
+      setMainKeypadTarget(null)
+      void cashout()
+      return
+    }
+
     if (mainKeypadTarget === 'sbpTopup') {
       setMainKeypadTarget(null)
       void sbpTopupStub()
@@ -1153,26 +1209,33 @@ function App() {
 
     const isCashTopup = mainKeypadTarget === 'cashTopup'
     const isSbpTopup = mainKeypadTarget === 'sbpTopup'
+    const isCashoutPin = mainKeypadTarget === 'cashoutPin'
     const isMoneyInput = isCashTopup || isSbpTopup
 
     const title =
       mainKeypadTarget === 'search'
         ? '№ П/С, телефон или заказ'
-        : isSbpTopup
-          ? 'Сумма СБП'
-          : 'Сумма наличными'
+        : isCashoutPin
+          ? 'PIN выдачи'
+          : isSbpTopup
+            ? 'Сумма СБП'
+            : 'Сумма наличными'
 
     const value =
       mainKeypadTarget === 'search'
         ? searchQuery
-        : isSbpTopup
-          ? sbpAmount
-          : cashTopupAmount
+        : isCashoutPin
+          ? cashoutPin
+          : isSbpTopup
+            ? sbpAmount
+            : cashTopupAmount
 
     const submitText =
       mainKeypadTarget === 'search'
         ? 'Найти'
-        : 'Пополнить'
+        : isCashoutPin
+          ? 'Выдать'
+          : 'Пополнить'
 
     return (
       <div className="mainKeypadPanel">
@@ -2395,6 +2458,71 @@ function App() {
     }
   }
 
+  function getCashOperationAmount() {
+    return Number(String(cashTopupAmount || '').replace(',', '.'))
+  }
+
+  function applyCashBalances(data: any) {
+    const customerbalance = Number(data.customerbalance ?? 0)
+    const cashierbalance = Number(data.cashierbalance ?? 0)
+    const moneyincashbox = Number(data.moneyincashbox ?? 0)
+
+    setFoundUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            balance: customerbalance,
+          }
+        : prev
+    )
+
+    setOwnerBalance(cashierbalance)
+    setCashBalance(moneyincashbox)
+    setStoreState((prev) =>
+      prev
+        ? {
+            ...prev,
+            owner_balance: cashierbalance,
+            cash_balance: moneyincashbox,
+          }
+        : selectedStore
+          ? {
+              store_id: selectedStore.store_id,
+              owner_account: selectedStore.owner_account || 0,
+              owner_balance: cashierbalance,
+              cash_balance: moneyincashbox,
+              cash_limit: 0,
+            }
+          : prev
+    )
+  }
+
+  function showCashSuccess(title: string, text: string, data?: any) {
+    setCashSuccessDialog({
+      title,
+      text,
+      customerbalance: data?.customerbalance,
+      cashierbalance: data?.cashierbalance,
+      moneyincashbox: data?.moneyincashbox,
+    })
+  }
+
+  function validateCashOperationBase() {
+    if (!cashier || !selectedStore || !foundUser) {
+      setError('Сначала найдите пайщика')
+      return null
+    }
+
+    const amount = getCashOperationAmount()
+
+    if (!amount || amount <= 0) {
+      setError('Введите сумму операции')
+      return null
+    }
+
+    return { amount, user: foundUser, store: selectedStore }
+  }
+
   function openCashTopupConfirm() {
     if (!cashier || !selectedStore || !foundUser) {
       setError('Сначала найдите пайщика')
@@ -2464,69 +2592,42 @@ function App() {
   }, [cashTopupConfirmOpen, cashTopupLoading, cashTopupAmount, foundUser, selectedStore, cashier, sessionId])
 
   async function cashTopup() {
-    if (!cashier || !selectedStore || !foundUser) {
-      setError('Сначала найдите пайщика')
-      return
-    }
+    const base = validateCashOperationBase()
+    if (!base) return
 
-    const amount = Number(cashTopupAmount)
-
-    if (!amount || amount <= 0) {
-      setError('Введите сумму пополнения')
-      return
-    }
+    const { amount, user, store } = base
 
     setCashTopupLoading(true)
     setError('')
+    setCashOperationMessage('')
 
     try {
-      const res = await apiFetch(`${API_BASE}/cashier/topup/cash`, {
+      if (!user.user_id) {
+        throw new Error('Не удалось выполнить пополнение: в данных пайщика нет user_id')
+      }
+
+      const params = new URLSearchParams({
+        user_id: String(user.user_id),
+        amount: String(amount),
+        store_id: String(store.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/transfer?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_account: foundUser.user_account,
-          amount,
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось пополнить П/С')
+        throw new Error(getErrorMessage(data, 'Не удалось пополнить П/С'))
       }
 
       const data = await res.json()
 
-      setFoundUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              balance: data.user_balance_after,
-            }
-          : prev
-      )
-
-      setStoreState((prev) =>
-        prev
-          ? {
-              ...prev,
-              owner_balance: data.owner_balance_after,
-              cash_balance: data.cash_balance_after,
-              cash_limit: data.cash_limit,
-            }
-          : {
-              store_id: selectedStore.store_id,
-              owner_account: data.owner_account,
-              owner_balance: data.owner_balance_after,
-              cash_balance: data.cash_balance_after,
-              cash_limit: data.cash_limit,
-            }
-      )
-
+      applyCashBalances(data)
       setCashTopupAmount('')
       setCashTopupConfirmOpen(false)
+      setCashOperationMessage('Пополнение выполнено')
+      showCashSuccess('Пополнение выполнено', 'Деньги зачислены на П/С пайщика.', data)
     } catch (e: any) {
       setError(e.message || 'Ошибка пополнения')
     } finally {
@@ -3831,59 +3932,226 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
   }, [sbpDialogOpen, screenProfile])
 
   async function sbpTopupStub() {
-    if (!cashier || !selectedStore) return
+    await openCashQrTopup()
+  }
 
-    const targetUserAccount = orderDetails?.order.user_account ?? foundUser?.user_account
+  async function openCashQrTopup() {
+    const base = validateCashOperationBase()
+    if (!base) return
 
-    if (!targetUserAccount) {
-      setError('Сначала найдите пайщика')
-      return
-    }
+    const { amount, user, store } = base
 
     setSbpLoading(true)
+    setCashQrLoading(true)
     setError('')
+    setCashOperationMessage('')
 
     try {
-      const res = await apiFetch(`${API_BASE}/cashier/topup/sbp`, {
+      const params = new URLSearchParams({
+        amount: String(amount),
+        login: String(user.user_account),
+        store_id: String(store.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/qr?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_account: targetUserAccount,
-          amount: Number(sbpAmount),
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось пополнить П/С')
+        throw new Error(getErrorMessage(data, 'Не удалось сформировать QR пополнения'))
       }
 
       const data = await res.json()
+      const qrBase64 = String(data.qr_base64 || '')
 
-      setSbpDialogOpen(false)
-      setSbpMessage('')
-
-      if (orderDetails) {
-        await openOrder(orderDetails.order.order_number)
-      } else {
-        setFoundUser((prev) =>
-          prev
-            ? {
-                ...prev,
-                balance: data.user_balance_after,
-              }
-            : prev
-        )
+      if (!qrBase64 && !data.qr_url) {
+        throw new Error('Сервер не вернул QR для пополнения')
       }
+
+      setCashQrDialog({
+        amount: Number(data.amount || amount),
+        old_balance: Number(user.balance || 0),
+        qr_base64: qrBase64,
+        image_type: String(data.image_type || 'image/png'),
+        qr_url: data.qr_url || null,
+        ttl: Number(data.ttl || 15),
+        created_at: Date.now(),
+      })
     } catch (e: any) {
       setError(e.message || 'Ошибка СБП-пополнения')
     } finally {
       setSbpLoading(false)
+      setCashQrLoading(false)
     }
   }
+
+  function closeCashQrDialog() {
+    setCashQrDialog(null)
+    setCashQrLoading(false)
+  }
+
+  async function openCashoutCheck() {
+    const base = validateCashOperationBase()
+    if (!base) return
+
+    const { amount, user, store } = base
+
+    const cashInBox = Number(storeState?.cash_balance ?? cashBalance ?? 0)
+    if (cashInBox < amount) {
+      setError('Недостаточно средств в кассе')
+      return
+    }
+
+    if (!user.user_id) {
+      setError('Не удалось выполнить выдачу: в данных пайщика нет user_id')
+      return
+    }
+
+    setCashoutLoading(true)
+    setError('')
+    setCashOperationMessage('')
+
+    try {
+      const params = new URLSearchParams({
+        user_id: String(user.user_id),
+        amount: String(amount),
+        store_id: String(store.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/cashout/check?${params.toString()}`, {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось проверить выдачу'))
+      }
+
+      const data = await res.json()
+      const amountWithComission = Number(data.amountwithcomission || amount)
+      const customerBalance = Number(data.customerbalance || 0)
+
+      if (customerBalance < amountWithComission) {
+        throw new Error('Недостаточно средств пайщика')
+      }
+
+      setCashoutCheckDialog({
+        amount,
+        amountwithcomission: amountWithComission,
+        customerbalance: customerBalance,
+        cashierbalance: Number(data.cashierbalance || 0),
+        moneyincashbox: Number(data.moneyincashbox || 0),
+      })
+      setCashoutPin('')
+
+      if (shouldUseTouchKeypad()) {
+        setMainKeypadTarget('cashoutPin')
+      }
+    } catch (e: any) {
+      setError(e.message || 'Ошибка проверки выдачи')
+    } finally {
+      setCashoutLoading(false)
+    }
+  }
+
+  async function cashout() {
+    if (!selectedStore || !foundUser || !cashoutCheckDialog) return
+
+    if (!foundUser.user_id) {
+      setError('Не удалось выполнить выдачу: в данных пайщика нет user_id')
+      return
+    }
+
+    if (cashoutPin.length !== 4) {
+      setError('Введите PIN-код из 4 цифр')
+      return
+    }
+
+    setCashoutLoading(true)
+    setError('')
+    setCashOperationMessage('')
+
+    try {
+      const params = new URLSearchParams({
+        user_id: String(foundUser.user_id),
+        amount: String(cashoutCheckDialog.amount),
+        pin: cashoutPin,
+        store_id: String(selectedStore.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cash/cashout?${params.toString()}`, {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось выполнить выдачу'))
+      }
+
+      const data = await res.json()
+
+      applyCashBalances(data)
+      setCashoutCheckDialog(null)
+      setCashoutPin('')
+      setCashTopupAmount('')
+      if (mainKeypadTarget === 'cashoutPin') setMainKeypadTarget(null)
+      setCashOperationMessage('Выдача выполнена')
+      showCashSuccess('Выдача выполнена', 'Наличные выданы пайщику.', data)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка выдачи')
+    } finally {
+      setCashoutLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!cashQrDialog || !foundUser) return
+
+    const ttlMs = Math.max(1, Number(cashQrDialog.ttl || 15)) * 60 * 1000
+    let stopped = false
+
+    const pollBalance = async () => {
+      if (stopped || !cashQrDialog || !foundUser) return
+
+      const elapsed = Date.now() - cashQrDialog.created_at
+      if (elapsed >= ttlMs) {
+        setCashQrDialog(null)
+        setCashOperationMessage('Время действия QR истекло. При необходимости сформируйте новый QR.')
+        return
+      }
+
+      try {
+        const data = await fetchCurrentShareholderData(foundUser.user_account)
+        const newBalance = Number(data.user.balance || 0)
+
+        setFoundUser(data.user)
+        setOrders(data.orders)
+        setStoreState(data.store)
+
+        if (newBalance > Number(cashQrDialog.old_balance || 0)) {
+          setCashQrDialog(null)
+          setCashTopupAmount('')
+          setCashOperationMessage('Баланс пайщика обновлён')
+          setCashSuccessDialog({
+            title: 'СБП-пополнение выполнено',
+            text: 'Баланс пайщика обновлён.',
+            customerbalance: newBalance,
+          })
+        }
+      } catch (e) {
+        console.error('Ошибка проверки баланса пайщика по QR', e)
+      }
+    }
+
+    const timer = window.setInterval(pollBalance, 30000)
+
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [cashQrDialog, foundUser?.user_account, cashier, selectedStore])
+
 
 
   if (selectedStore && cashier && stockDialogOpen) {
@@ -5677,6 +5945,190 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
           </div>
         )}
 
+        {cashQrDialog && foundUser && (
+          <div className="qtyOverlay">
+            <div className="qtyDialog cashQrDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Пополнение П/С через СБП</h2>
+                  <p className="muted">Пайщик {foundUser.user_account}</p>
+                </div>
+                <button className="secondary" onClick={closeCashQrDialog} disabled={cashQrLoading}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="qtyDialogBody">
+                <div className="cashTopupConfirmAmount">
+                  <span>Сумма пополнения</span>
+                  <b>{formatMoney(cashQrDialog.amount)}</b>
+                </div>
+
+                <div className="cashQrImageBox">
+                  {cashQrDialog.qr_base64 ? (
+                    <img
+                      src={buildQrImageSrc(cashQrDialog.qr_base64, cashQrDialog.image_type)}
+                      alt="QR для пополнения баланса"
+                    />
+                  ) : (
+                    <div className="emptyBox">QR-картинка недоступна</div>
+                  )}
+                </div>
+
+                <p className="muted cashQrHint">
+                  Проверяем баланс пайщика каждые 30 секунд. QR действует {cashQrDialog.ttl} мин.
+                </p>
+
+                {cashQrDialog.qr_url && (
+                  <p className="muted cashQrUrl">{cashQrDialog.qr_url}</p>
+                )}
+
+                <div className="qtyActions">
+                  <button className="secondary" onClick={closeCashQrDialog} disabled={cashQrLoading}>
+                    Закрыть
+                  </button>
+                  <button className="primary" onClick={openCashQrTopup} disabled={cashQrLoading || sbpLoading}>
+                    {cashQrLoading || sbpLoading ? 'Формируем...' : 'Сформировать заново'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cashoutCheckDialog && foundUser && (
+          <div className="qtyOverlay">
+            <div className="cashTopupConfirmDialog cashoutPinDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>Подтвердить выдачу</h2>
+                  <p className="muted">Введите PIN-код пайщика</p>
+                </div>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setCashoutCheckDialog(null)
+                    setCashoutPin('')
+                    if (mainKeypadTarget === 'cashoutPin') setMainKeypadTarget(null)
+                  }}
+                  disabled={cashoutLoading}
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                <div className="cashTopupConfirmRow">
+                  <span>Пайщик</span>
+                  <b>{foundUser.user_account}</b>
+                </div>
+
+                <div className="cashTopupConfirmAmount">
+                  <span>Сумма выдачи</span>
+                  <b>{formatMoney(cashoutCheckDialog.amount)}</b>
+                </div>
+
+                <div className="cashTopupConfirmRow">
+                  <span>С учетом комиссии</span>
+                  <b>{formatMoney(cashoutCheckDialog.amountwithcomission)}</b>
+                </div>
+
+                <label>PIN-код</label>
+                <input
+                  value={cashoutPin}
+                  onChange={(e) => setCashoutPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onFocus={() => {
+                    if (shouldUseTouchKeypad()) setMainKeypadTarget('cashoutPin')
+                  }}
+                  onClick={() => {
+                    if (shouldUseTouchKeypad()) setMainKeypadTarget('cashoutPin')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void cashout()
+                    }
+                  }}
+                  type={shouldUseTouchKeypad() ? 'text' : 'password'}
+                  readOnly={shouldUseTouchKeypad()}
+                  inputMode={shouldUseTouchKeypad() ? 'none' : 'numeric'}
+                  enterKeyHint="done"
+                  maxLength={4}
+                  placeholder="4 цифры"
+                />
+
+                {error && <div className="error">{error}</div>}
+
+                <div className="cashTopupConfirmActions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setCashoutCheckDialog(null)
+                      setCashoutPin('')
+                      if (mainKeypadTarget === 'cashoutPin') setMainKeypadTarget(null)
+                    }}
+                    disabled={cashoutLoading}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={cashout}
+                    disabled={cashoutLoading || cashoutPin.length !== 4}
+                  >
+                    {cashoutLoading ? 'Выдаем...' : 'Выдать'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cashSuccessDialog && (
+          <div className="qtyOverlay">
+            <div className="cashTopupConfirmDialog" role="dialog" aria-modal="true">
+              <div className="qtyDialogHeader">
+                <div>
+                  <h2>{cashSuccessDialog.title}</h2>
+                  <p className="muted">{cashSuccessDialog.text}</p>
+                </div>
+                <button className="secondary" onClick={() => setCashSuccessDialog(null)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="cashTopupConfirmBody">
+                {cashSuccessDialog.customerbalance !== undefined && (
+                  <div className="cashTopupConfirmRow">
+                    <span>Баланс пайщика</span>
+                    <b>{formatMoney(cashSuccessDialog.customerbalance)}</b>
+                  </div>
+                )}
+                {cashSuccessDialog.cashierbalance !== undefined && (
+                  <div className="cashTopupConfirmRow">
+                    <span>П/С владельца ТВТ</span>
+                    <b>{formatMoney(cashSuccessDialog.cashierbalance)}</b>
+                  </div>
+                )}
+                {cashSuccessDialog.moneyincashbox !== undefined && (
+                  <div className="cashTopupConfirmRow">
+                    <span>Нал. в кассе</span>
+                    <b>{formatMoney(cashSuccessDialog.moneyincashbox)}</b>
+                  </div>
+                )}
+
+                <div className="cashTopupConfirmActions">
+                  <button className="primary" onClick={() => setCashSuccessDialog(null)}>
+                    ОК
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {txDialogOpen && (
           <div className="itemPickerOverlay">
             <div className="itemPicker">
@@ -5731,7 +6183,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
           </div>
         )}
 
-        {sbpDialogOpen && !orderDetails && (
+        {false && sbpDialogOpen && !orderDetails && (
           <div className="qtyOverlay">
             <div className="qtyDialog">
               <div className="qtyDialogHeader">
@@ -5887,6 +6339,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
             {error && <div className="error">{error}</div>}
             {orderPaymentMessage && <div className="notice">{orderPaymentMessage}</div>}
+            {cashOperationMessage && <div className="notice">{cashOperationMessage}</div>}
             {orderLoading && <div className="notice">Открываем заказ...</div>}
 
             <div className="infoGrid">
@@ -5948,17 +6401,17 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               </button>
               <button
                 className="secondary"
-                onClick={() => {
-                  if (!foundUser) {
-                    setError('Сначала найдите пайщика')
-                    return
-                  }
-                  setSbpAmount('')
-                  setSbpMessage('СБП-заглушка для пополнения П/С пайщика')
-                  setSbpDialogOpen(true)
-                }}
+                onClick={openCashQrTopup}
+                disabled={!foundUser || sbpLoading || cashQrLoading}
               >
-                СБП
+                {sbpLoading || cashQrLoading ? 'QR...' : 'СБП'}
+              </button>
+              <button
+                className="secondary"
+                onClick={openCashoutCheck}
+                disabled={!foundUser || cashoutLoading}
+              >
+                {cashoutLoading ? 'Проверяем...' : 'Выдать'}
               </button>
               <button
                 className="secondary"

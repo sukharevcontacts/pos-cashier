@@ -3321,6 +3321,78 @@ body[data-screen-profile="tablet_10"] .stockReceiptActions {
   }
 }
 
+/* Операции с cash-балансом пайщика: QR, PIN и кнопка Выдать */
+.cashQrDialog {
+  width: min(620px, 100%);
+}
+
+.cashQrImageBox {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.cashQrImageBox img {
+  width: 300px;
+  height: 300px;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.cashQrHint {
+  margin: 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+.cashQrUrl {
+  margin: 0;
+  text-align: center;
+  word-break: break-all;
+  font-size: 13px;
+}
+
+.cashoutPinDialog input {
+  text-align: center;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-screen-profile="tablet_10"] .bottomActions {
+  grid-template-columns: minmax(0, 1fr) 100px 76px 86px 112px;
+  gap: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .cashQrDialog {
+  width: min(560px, 96vw);
+}
+
+body[data-screen-profile="tablet_10"] .cashQrImageBox img {
+  width: 240px;
+  height: 240px;
+}
+
+body[data-screen-profile="tablet_10"] .cashoutPinDialog input {
+  font-size: 24px;
+}
+
+@media (min-width: 701px) {
+  .bottomActions {
+    grid-template-columns: minmax(0, 1fr) 132px 92px 104px 142px;
+  }
+}
+
+@media (max-width: 700px) {
+  .bottomActions {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Экран Запасы: операции оприходования и списания */
 .stockWorkOverlay {
   align-items: stretch;
