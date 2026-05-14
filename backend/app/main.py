@@ -4,11 +4,10 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import APP_NAME
-from app.db.session import engine
+from app.db.db_pool_pg import get_db_pool
 from app.core.logger import setup_logger
 
 setup_logger()
@@ -44,13 +43,16 @@ async def health_head():
 
 @app.get("/db-check")
 async def db_check():
-    async with engine.connect() as conn:
-        result = await conn.execute(text("SELECT now() AS db_time"))
-        row = result.mappings().first()
+    pool = await get_db_pool()
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT now() AS db_time")
+            row = await cursor.fetchone()
 
     return {
         "ok": True,
-        "db_time": str(row["db_time"]),
+        "db_time": str(row[0]) if row else None,
     }
 
 
