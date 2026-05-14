@@ -2696,7 +2696,7 @@ useEffect(() => {
   }
 }, [selectedStore])
 
-async function openOrder(orderNumber: number) {
+async function openOrder(orderNumber: number, userForBalance: FoundUser | null = foundUser) {
     if (!cashier || !selectedStore || !foundUser) return
   
     setError('')
@@ -2705,7 +2705,7 @@ async function openOrder(orderNumber: number) {
   
     try {
       const params = new URLSearchParams({
-        cashier_account: String(cashier.cashier_account),
+        cashier_account: String(cashier.cashier_account ?? ''),
         store_id: String(selectedStore.store_id),
         device_id: 'web',
       })
@@ -2718,7 +2718,7 @@ async function openOrder(orderNumber: number) {
       }
   
       const data = await res.json()
-      const normalizedData = mapParitetOrderToFrontResponse(data, foundUser, selectedStore)
+      const normalizedData = mapParitetOrderToFrontResponse(data, userForBalance || foundUser, selectedStore)
 
       setOrderDetails(normalizedData)
   
@@ -2944,8 +2944,22 @@ async function openOrder(orderNumber: number) {
       setSelectedOrderNumber(savedOrderNumber)
       setOrderDetails(mapParitetOrderToFrontResponse(saved, foundUser, selectedStore))
 
-      await refreshCurrentUser(savedOrderNumber)
-      await openOrder(savedOrderNumber)
+      const refreshed = await refreshCurrentUser(savedOrderNumber)
+      const freshUser = refreshed?.user || foundUser
+
+      setOrderDetails((prev) =>
+        prev
+          ? {
+              ...prev,
+              order: {
+                ...prev.order,
+                user_balance: Number(freshUser.balance || 0),
+              },
+            }
+          : prev
+      )
+
+      await openOrder(savedOrderNumber, freshUser)
     } catch (e: any) {
       setError(e.message || 'Ошибка сохранения заказа')
     } finally {
