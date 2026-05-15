@@ -27,6 +27,7 @@ async def login(data: dict):
         return {
             "session_id": session_id,
             "cashier": {
+                "cashier_account": str(data["cashier_account"]),
                 "user_fam": None,
                 "user_name": payload["name"],
                 "user_otch": None,
