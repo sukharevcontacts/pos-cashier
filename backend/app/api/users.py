@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional
 
 from app.core.session import session_store
-from app.services.paritet.users import find_user as paritet_find_user
+from app.services.paritet.users import (
+    register_user as paritet_register_user,
+    fill_out_profile as paritet_fill_out_profile,
+    find_user as paritet_find_user,
+)
 from app.services.paritet.orders import find_orders as paritet_find_orders
 import logging
 
@@ -118,3 +122,97 @@ async def search_shareholder(
     except Exception as e:
         logger.exception("Ошибка поиска пайщика/заказа")
         raise HTTPException(400, str(e))
+
+@router.post("/register")
+async def register_shareholder(
+    name: str = Query(...),
+    birthdate: str = Query(...),
+    phone: str = Query(...),
+    email: str = Query(...),
+    address: str = Query(...),
+    x_session_id: str = Header(...),
+    store_id: int = Query(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        user = await paritet_register_user(
+            token=session.token,
+            tvt_id=store_id,
+            name=name,
+            birthdate=birthdate,
+            phone=phone,
+            email=email,
+            address=address,
+        )
+
+        return {
+            "ok": True,
+            "user": {
+                "user_id": user.get("userid"),
+                "user_account": user.get("account"),
+                "user_phone": user.get("phone"),
+                "user_name": user.get("name"),
+                "user_fam": None,
+                "user_otch": None,
+                "address": None,
+                "email": user.get("email"),
+                "date_of_birth": None,
+                "balance": user.get("balance"),
+                "photo_url": user.get("photoUrl") or user.get("photo"),
+            },
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка регистрации пайщика")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(e)},
+        )
+
+@router.post("/profile")
+async def fill_profile(
+    user_id: int = Query(...),
+    name: str = Query(...),
+    birthdate: str = Query(...),
+    phone: str = Query(...),
+    email: str = Query(...),
+    address: str = Query(...),
+    x_session_id: str = Header(...),
+    store_id: int = Query(...),
+):
+    session = session_store.get(x_session_id)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+
+    try:
+        payload = await paritet_fill_out_profile(
+            token=session.token,
+            tvt_id=store_id,
+            user_id=user_id,
+            name=name,
+            birthdate=birthdate,
+            phone=phone,
+            email=email,
+            address=address,
+        )
+
+        return {
+            "ok": True,
+            "profile": {
+                "name": payload.get("name"),
+                "birthdate": payload.get("birthdate"),
+                "phone": payload.get("phone"),
+                "email": payload.get("email"),
+                "address": payload.get("address"),
+            },
+        }
+
+    except Exception as e:
+        logger.exception("Ошибка заполнения анкеты")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(e)},
+        )
