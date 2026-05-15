@@ -101,6 +101,110 @@ async def pos_index_head():
 
     return Response(status_code=200)
 
+@app.get("/pos/sw.js")
+async def pos_service_worker():
+    sw_file = FRONTEND_DIST / "sw.js"
+
+    if not sw_file.exists():
+        return Response(status_code=404)
+
+    return FileResponse(
+        sw_file,
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/pos/",
+        },
+    )
+
+
+@app.head("/pos/sw.js")
+async def pos_service_worker_head():
+    sw_file = FRONTEND_DIST / "sw.js"
+
+    if not sw_file.exists():
+        return Response(status_code=404)
+
+    return Response(
+        status_code=200,
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/pos/",
+        },
+    )
+
+
+@app.get("/pos/manifest.webmanifest")
+async def pos_manifest():
+    manifest_file = FRONTEND_DIST / "manifest.webmanifest"
+
+    if not manifest_file.exists():
+        return Response(status_code=404)
+
+    return FileResponse(
+        manifest_file,
+        media_type="application/manifest+json",
+        headers={
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@app.head("/pos/manifest.webmanifest")
+async def pos_manifest_head():
+    manifest_file = FRONTEND_DIST / "manifest.webmanifest"
+
+    if not manifest_file.exists():
+        return Response(status_code=404)
+
+    return Response(
+        status_code=200,
+        media_type="application/manifest+json",
+        headers={
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@app.get("/pos/icons.svg")
+async def pos_icons_svg():
+    icon_file = FRONTEND_DIST / "icons.svg"
+
+    if not icon_file.exists():
+        return Response(status_code=404)
+
+    return FileResponse(icon_file, media_type="image/svg+xml")
+
+
+@app.get("/pos/favicon.svg")
+async def pos_favicon_svg():
+    icon_file = FRONTEND_DIST / "favicon.svg"
+
+    if not icon_file.exists():
+        return Response(status_code=404)
+
+    return FileResponse(icon_file, media_type="image/svg+xml")
+
+
+@app.get("/pos/pwa-icon-192.png")
+async def pos_pwa_icon_192():
+    icon_file = FRONTEND_DIST / "pwa-icon-192.png"
+
+    if not icon_file.exists():
+        return Response(status_code=404)
+
+    return FileResponse(icon_file, media_type="image/png")
+
+
+@app.get("/pos/pwa-icon-512.png")
+async def pos_pwa_icon_512():
+    icon_file = FRONTEND_DIST / "pwa-icon-512.png"
+
+    if not icon_file.exists():
+        return Response(status_code=404)
+
+    return FileResponse(icon_file, media_type="image/png")
 
 @app.get("/pos/{full_path:path}")
 async def pos_spa_fallback(full_path: str):
