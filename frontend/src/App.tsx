@@ -727,6 +727,7 @@ function App() {
   const [storeSelectLoading, setStoreSelectLoading] = useState(false)
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
   const [sideMenuTab, setSideMenuTab] = useState<SideMenuTab>('root')
+  const [appExitNoticeOpen, setAppExitNoticeOpen] = useState(false)
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [mainKeypadTarget, setMainKeypadTarget] = useState<MainKeypadTarget>(null)
@@ -1488,6 +1489,63 @@ function App() {
     void unlockPromise
   }
 
+  function isRunningAsPwa() {
+    if (typeof window === 'undefined') return false
+
+    const standaloneNavigator = window.navigator as Navigator & { standalone?: boolean }
+
+    return window.matchMedia('(display-mode: standalone)').matches || standaloneNavigator.standalone === true
+  }
+
+  async function exitApplication() {
+    closeSideMenu()
+    setMainKeypadTarget(null)
+    setAppExitNoticeOpen(false)
+
+    await unlockCurrentOrderIfNeeded()
+
+    if (!isRunningAsPwa()) {
+      setAppExitNoticeOpen(true)
+      return
+    }
+
+    try {
+      window.close()
+    } catch {
+      // Браузер может запретить программное закрытие окна.
+    }
+
+    window.setTimeout(() => {
+      if (!document.hidden) {
+        setAppExitNoticeOpen(true)
+      }
+    }, 350)
+  }
+
+  function renderAppExitNotice() {
+    if (!appExitNoticeOpen) return null
+
+    return (
+      <div className="appExitOverlay" role="presentation">
+        <div className="appExitDialog" role="dialog" aria-modal="true" aria-labelledby="app-exit-title">
+          <div className="appExitDialogIcon" aria-hidden="true">
+            ⎋
+          </div>
+          <div>
+            <h2 id="app-exit-title">Закройте приложение вручную</h2>
+            <p>
+              В обычном браузере сайт не может сам закрыть вкладку. Закройте вкладку браузера вручную
+              или используйте системную кнопку закрытия.
+            </p>
+          </div>
+          <button type="button" className="primary full" onClick={() => setAppExitNoticeOpen(false)}>
+            Понятно
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   function renderSideMenu() {
     if (!cashier) return null
 
@@ -1559,7 +1617,10 @@ function App() {
                 <button className="secondary full" onClick={switchStore} disabled={!selectedStore}>
                   Сменить ТВТ
                 </button>
-                <button className="secondary full" onClick={logoutCashier}>
+                <button className="secondary full sideMenuSwitchUserButton" onClick={logoutCashier}>
+                  Сменить пользователя
+                </button>
+                <button className="secondary full sideMenuExitButton" onClick={exitApplication}>
                   Выйти
                 </button>
               </div>
@@ -4338,6 +4399,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
         {renderSideMenu()}
 
+        {renderAppExitNotice()}
+
         <main className="stockReceiptScreen">
           <section className="stockReceiptMain">
             <div className="stockReceiptTop">
@@ -4645,6 +4708,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
         </header>
 
         {renderSideMenu()}
+
+        {renderAppExitNotice()}
 
         <main className="orderScreen">
           <section className="orderMain">
@@ -5341,6 +5406,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
         </header>
 
         {renderSideMenu()}
+
+        {renderAppExitNotice()}
 
         {renderMainKeypad()}
 

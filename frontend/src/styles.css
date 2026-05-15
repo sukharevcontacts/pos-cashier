@@ -3686,3 +3686,85 @@ body[data-screen-profile="tablet_10"] .lineRow.weightLineRow {
   min-height: 72px;
 }
 
+
+
+/* PWA exit and switch-user actions */
+.sideMenuSwitchUserButton {
+  border-color: #cfd8dc;
+  background: #f8faf9;
+}
+
+.sideMenuExitButton,
+.appExitButton {
+  border-color: #f3c6c6;
+  background: #fff5f5;
+  color: #8a1f1f;
+}
+
+.sideMenuExitButton:hover,
+.appExitButton:hover {
+  background: #ffe9e9;
+}
+
+.appExitOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.appExitDialog {
+  width: min(430px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  color: #222;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+  text-align: center;
+}
+
+.appExitDialogIcon {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  border-radius: 999px;
+  background: #f1f7f3;
+  color: #0b6b34;
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.appExitDialog h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.appExitDialog p {
+  margin: 8px 0 0;
+  color: #555;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+body[data-screen-profile="tablet_10"] .appExitDialog {
+  width: min(390px, 100%);
+  padding: 20px;
+  border-radius: 16px;
+}
+
+body[data-screen-profile="tablet_10"] .appExitDialog h2 {
+  font-size: 21px;
+}
+
+body[data-screen-profile="tablet_10"] .appExitDialog p {
+  font-size: 14px;
+}
