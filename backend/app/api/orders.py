@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 
+from app.db.db_methods_pg import save_pos_order_done_event
+
 from app.core.session import session_store
 from app.services.paritet.orders import (
     get_order_details as paritet_get_order,
@@ -210,6 +212,7 @@ async def generate_order_payment_qr(
 async def done_order_route(
     order_number: int,
     store_id: int = Query(...),
+    user_account: str = Query(...),
     x_session_id: str = Header(...),
 ):
     session = session_store.get(x_session_id)
@@ -223,11 +226,38 @@ async def done_order_route(
             order_number=order_number,
         )
 
+        ok = data.get("code") == 200
+        payload = data.get("payload") or {}
+
+        if ok:
+            try:
+                stat_result = await save_pos_order_done_event(
+                    user_account=str(user_account),
+                    order_id=int(order_number),
+                    store_id=int(store_id),
+                )
+
+                if stat_result is False:
+                    logger.error(
+                        "Заказ проведён в Paritet, но не удалось записать событие выкупа: "
+                        f"order_number={order_number}, "
+                        f"user_account={user_account}, "
+                        f"store_id={store_id}"
+                    )
+
+            except Exception:
+                logger.exception(
+                    "Заказ проведён в Paritet, но запись события выкупа завершилась ошибкой: "
+                    f"order_number={order_number}, "
+                    f"user_account={user_account}, "
+                    f"store_id={store_id}"
+                )
+
         return {
             "ok": data.get("code") == 200,
             "order_number": order_number,
             "error": data.get("error"),
-            "payload": data.get("payload") or {}, 
+            "payload": data.get("payload") or {},
         }
 
     except Exception as e:

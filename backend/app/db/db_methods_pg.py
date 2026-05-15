@@ -120,6 +120,46 @@ async def save_pos_cashier_settings(
         return False
 
 
+async def save_pos_order_done_event(
+    user_account: str,
+    order_id: int,
+    store_id: int,
+):
+    """
+    Сохранить факт успешного выкупа/проведения заказа.
+
+    Используется после успешного done_order в Paritet.
+    Запись/обновление делается внутри функции БД через MERGE.
+    """
+    pool = await get_db_pool()
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    select
+                        user_account,
+                        order_id,
+                        store_id
+                    from coop.save_pos_order_done_event(%s, %s, %s)
+                    """,
+                    (
+                        str(user_account),
+                        int(order_id),
+                        int(store_id),
+                    ),
+                )
+
+                rows = await cursor.fetchall()
+                columns = [column[0] for column in cursor.description]
+
+                result = [dict(zip(columns, row)) for row in rows]
+                return result[0] if result else None
+
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении факта выкупа заказа: {e}")
+        return False
+
 async def test_func():
     result = await manage_order_message_header(order_number=526,method='update',tg_chat_id=1002441644214,message_id=13)
     print(f"Результат: {result}")

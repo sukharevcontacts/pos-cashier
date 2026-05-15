@@ -3953,28 +3953,29 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
   }
 
   async function doneOrder(orderNumber: number) {
-    if (!selectedStore) return
+	if (!selectedStore || !foundUser) return
+	
+	const params = new URLSearchParams({
+	  store_id: String(selectedStore.store_id),
+	  user_account: String(foundUser.user_account),
+	})
+	
+	const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}/done?${params.toString()}`, {
+	  method: 'POST',
+	})
+	
+	if (!res.ok) {
+	  const data = await res.json().catch(() => null)
+	  throw new Error(getErrorMessage(data, 'Не удалось провести заказ'))
+	}
+	
+	const data = await res.json()
+	
+	if (!data?.ok) {
+	  throw new Error(data?.error || 'Не удалось провести заказ')
+	}
 
-    const params = new URLSearchParams({
-      store_id: String(selectedStore.store_id),
-    })
-
-    const res = await apiFetch(`${API_BASE}/cashier/orders/${orderNumber}/done?${params.toString()}`, {
-      method: 'POST',
-    })
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => null)
-      throw new Error(getErrorMessage(data, 'Не удалось провести заказ'))
-    }
-
-    const data = await res.json()
-
-    if (!data?.ok) {
-      throw new Error(data?.error || 'Не удалось провести заказ')
-    }
-
-    return data
+	return data
   }
 
   async function payOrder() {
