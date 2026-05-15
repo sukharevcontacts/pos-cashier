@@ -29,7 +29,11 @@ self.addEventListener('activate', (event) => {
 })
 
 function isApiRequest(url) {
-  return url.pathname.startsWith('/api/') || url.pathname.startsWith('/pos/api/')
+  return (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/pos-api/') ||
+    url.pathname.startsWith('/pos/api/')
+  )
 }
 
 function isStaticAsset(url) {
