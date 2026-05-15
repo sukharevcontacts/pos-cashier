@@ -1,4 +1,4 @@
-from db_pool_pg import get_db_pool
+from app.db.db_pool_pg import get_db_pool
 import asyncio
 from typing import Optional, List, Dict, Any, Set
 import pandas as pd
