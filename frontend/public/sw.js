@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-cashier-pwa-v1'
+const CACHE_NAME = 'pos-cashier-pwa-v2'
 
 const STATIC_CACHE_PATHS = [
   '/pos/',
