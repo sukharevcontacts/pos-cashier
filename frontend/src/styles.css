@@ -3821,3 +3821,101 @@ body[data-screen-profile="tablet_10"] .appExitDialog h2 {
 body[data-screen-profile="tablet_10"] .appExitDialog p {
   font-size: 14px;
 }
+
+/* FIX order bottom workspace lower */
+/* Экран заказа: свободную высоту отдаем списку товаров/пустому блоку,
+   поэтому ввод товара и нижние кнопки уходят ближе к нижнему краю. */
+.orderScreen {
+  min-height: calc(100dvh - 76px);
+  display: flex;
+  flex-direction: column;
+}
+
+.orderMain {
+  flex: 1 1 auto;
+  min-height: calc(100dvh - 120px);
+  display: flex;
+  flex-direction: column;
+}
+
+.orderMain > .linesTable {
+  flex: 1 1 auto;
+  min-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+}
+
+.orderMain > .emptyOrder {
+  flex: 1 1 auto;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orderMain > .quickAddRow,
+.orderMain > .orderActions {
+  flex: 0 0 auto;
+}
+
+.orderMain > .quickAddRow {
+  margin-top: 18px;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen {
+  min-height: calc(100dvh - 50px);
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain {
+  flex: 1 1 auto;
+  min-height: calc(100dvh - 66px);
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain > .linesTable {
+  flex: 1 1 auto;
+  min-height: 140px;
+  max-height: none;
+  overflow-y: auto;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain > .emptyOrder {
+  flex: 1 1 auto;
+  min-height: 140px;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain > .quickAddRow {
+  margin-top: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderMain > .orderActions {
+  margin-top: 8px;
+}
+/* END FIX order bottom workspace lower */
+
+/* FIX quick item dropdown opens upward */
+/* Окно заказа: подсказки товаров открываются вверх поверх списка строк заказа. */
+.orderMain > .linesTable,
+.orderMain > .emptyOrder {
+  position: relative;
+  z-index: 1;
+}
+
+.quickAddRow {
+  position: relative;
+  z-index: 30;
+}
+
+.quickItemDropdown {
+  transform-origin: bottom center;
+}
+
+body[data-screen-profile="tablet_10"] .quickAddRow {
+  z-index: 35;
+}
+/* END FIX quick item dropdown opens upward */
+

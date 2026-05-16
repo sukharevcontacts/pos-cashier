@@ -862,6 +862,37 @@ function App() {
   const [quickItemMatches, setQuickItemMatches] = useState<StoreItem[]>([])
   const [quickItemSearchLoading, setQuickItemSearchLoading] = useState(false)
   const [quickItemDropdownOpen, setQuickItemDropdownOpen] = useState(false)
+  const quickAddRowRef = useRef<HTMLDivElement | null>(null)
+  const [quickItemDropdownMaxHeight, setQuickItemDropdownMaxHeight] = useState(260)
+
+  function updateQuickItemDropdownMaxHeight() {
+    const row = quickAddRowRef.current
+    if (!row || typeof window === 'undefined') return
+
+    const rowRect = row.getBoundingClientRect()
+    const topbar = document.querySelector('.orderTopbar')
+    const topbarBottom = topbar instanceof HTMLElement ? topbar.getBoundingClientRect().bottom : 0
+    const safeGap = screenProfile === 'tablet_10' ? 10 : 14
+    const availableHeight = Math.floor(rowRect.top - topbarBottom - safeGap)
+    const nextHeight = Math.max(96, Math.min(360, availableHeight))
+
+    setQuickItemDropdownMaxHeight((current) => (current === nextHeight ? current : nextHeight))
+  }
+
+  useEffect(() => {
+    if (!quickItemDropdownOpen) return
+
+    updateQuickItemDropdownMaxHeight()
+
+    const handleViewportChange = () => updateQuickItemDropdownMaxHeight()
+    window.addEventListener('resize', handleViewportChange)
+    window.addEventListener('orientationchange', handleViewportChange)
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange)
+      window.removeEventListener('orientationchange', handleViewportChange)
+    }
+  }, [quickItemDropdownOpen, quickItemCode, quickItemMatches.length, screenProfile])
   const [storeItems, setStoreItems] = useState<StoreItem[]>([])
   const [itemCategories, setItemCategories] = useState<ItemCategoryGroup[]>([])
   const [selectedItemCategory, setSelectedItemCategory] = useState('')
@@ -4801,7 +4832,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               </div>
             )}
 
-            <div className="quickAddRow" style={{ position: 'relative' }}>
+            <div className="quickAddRow" ref={quickAddRowRef} style={{ position: 'relative' }}>
               <label>Товар</label>
               <input
                 value={quickItemCode}
@@ -4837,11 +4868,12 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                     position: 'absolute',
                     left: 0,
                     right: 0,
-                    top: '100%',
-                    zIndex: 50,
-                    marginTop: 8,
-                    maxHeight: 360,
+                    bottom: '100%',
+                    zIndex: 120,
+                    marginBottom: 8,
+                    maxHeight: quickItemDropdownMaxHeight,
                     overflowY: 'auto',
+                    overscrollBehavior: 'contain',
                     borderRadius: 16,
                     border: '1px solid rgba(0, 0, 0, 0.12)',
                     background: '#fff',
