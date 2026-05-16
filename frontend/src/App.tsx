@@ -5,6 +5,7 @@ import './styles.css'
 type ScreenProfile = 'auto' | 'tablet_10'
 type MainKeypadTarget = 'search' | 'cashTopup' | 'sbpTopup' | 'cashoutPin' | null
 type SearchInputSource = 'main' | 'keypad'
+type CashTopupInputSource = 'main' | 'keypad'
 type TextSelectionRange = { start: number; end: number }
 type SideMenuTab = 'root' | 'shareholder' | 'stock' | 'chats' | 'reports' | 'settings'
 
@@ -750,6 +751,11 @@ function App() {
   const [txRows, setTxRows] = useState<UserTransactionRow[]>([])
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<number | null>(null)
   const [cashTopupAmount, setCashTopupAmount] = useState('')
+  const cashTopupInputRef = useRef<HTMLInputElement | null>(null)
+  const mainKeypadCashTopupInputRef = useRef<HTMLInputElement | null>(null)
+  const activeCashTopupInputSourceRef = useRef<CashTopupInputSource>('main')
+  const cashTopupCaretRangeRef = useRef<TextSelectionRange>({ start: 0, end: 0 })
+  const isRestoringCashTopupCaretRef = useRef(false)
   const [cashTopupLoading, setCashTopupLoading] = useState(false)
   const [cashTopupConfirmOpen, setCashTopupConfirmOpen] = useState(false)
   const cashTopupConfirmOpenedAtRef = useRef(0)
@@ -1215,6 +1221,145 @@ function App() {
     }
   }
 
+  function normalizeMoneyInputValue(value: string) {
+    const raw = String(value || '').replace(',', '.').replace(/[^0-9.]/g, '')
+
+    if (!raw) return ''
+
+    const dotIndex = raw.indexOf('.')
+
+    if (dotIndex === -1) {
+      return raw.replace(/^0+(?=\d)/, '') || '0'
+    }
+
+    const integerPart = raw.slice(0, dotIndex).replace(/^0+(?=\d)/, '') || '0'
+    const decimalPart = raw.slice(dotIndex + 1).replace(/\./g, '')
+
+    return `${integerPart}.${decimalPart}`
+  }
+
+  function setStoredCashTopupCaretRange(range: TextSelectionRange) {
+    cashTopupCaretRangeRef.current = range
+  }
+
+  function restoreCashTopupCaret(range: TextSelectionRange, source?: CashTopupInputSource) {
+    const targetSource = source || activeCashTopupInputSourceRef.current
+    setStoredCashTopupCaretRange(range)
+
+    window.requestAnimationFrame(() => {
+      const input = targetSource === 'keypad' ? mainKeypadCashTopupInputRef.current : cashTopupInputRef.current
+
+      if (!input) return
+
+      isRestoringCashTopupCaretRef.current = true
+
+      try {
+        input.focus({ preventScroll: true })
+        input.setSelectionRange(range.start, range.end)
+      } catch {
+        // Некоторые мобильные браузеры могут отказать в установке курсора.
+      }
+
+      window.setTimeout(() => {
+        isRestoringCashTopupCaretRef.current = false
+      }, 0)
+    })
+  }
+
+  function rememberCashTopupCaret(input: HTMLInputElement | null, source: CashTopupInputSource) {
+    if (isRestoringCashTopupCaretRef.current) return
+
+    activeCashTopupInputSourceRef.current = source
+
+    const currentLength = input ? String(input.value || '').length : normalizeMoneyInputValue(cashTopupAmount).length
+    const range = getInputSelectionRange(input, currentLength)
+
+    setStoredCashTopupCaretRange(range)
+  }
+
+  function handleCashTopupAmountChange(value: string, input: HTMLInputElement, source: CashTopupInputSource) {
+    activeCashTopupInputSourceRef.current = source
+
+    const rawSelectionStart = input.selectionStart ?? value.length
+    const rawSelectionEnd = input.selectionEnd ?? rawSelectionStart
+    const next = normalizeMoneyInputValue(value)
+    const nextRange = clampTextSelectionRange(
+      normalizeMoneyInputValue(value.slice(0, rawSelectionStart)).length,
+      normalizeMoneyInputValue(value.slice(0, rawSelectionEnd)).length,
+      next.length,
+    )
+
+    setCashTopupAmount(next)
+    setStoredCashTopupCaretRange(nextRange)
+
+    if (next !== value) {
+      restoreCashTopupCaret(nextRange, source)
+    }
+  }
+
+  function setCashTopupAmountFromKeypad(nextValue: string, nextRange: TextSelectionRange) {
+    const normalized = normalizeMoneyInputValue(nextValue)
+    const clampedRange = clampTextSelectionRange(nextRange.start, nextRange.end, normalized.length)
+
+    setCashTopupAmount(normalized)
+    restoreCashTopupCaret(clampedRange)
+  }
+
+  function insertCashTopupKeypadValue(value: string) {
+    const current = normalizeMoneyInputValue(cashTopupAmount)
+    const range = clampTextSelectionRange(
+      cashTopupCaretRangeRef.current.start,
+      cashTopupCaretRangeRef.current.end,
+      current.length,
+    )
+    let insertValue = value === ',' ? '.' : value
+
+    if (!insertValue) return
+
+    const before = current.slice(0, range.start)
+    const after = current.slice(range.end)
+
+    if (insertValue === '.' && `${before}${after}`.includes('.')) {
+      return
+    }
+
+    if (insertValue === '.' && !before) {
+      insertValue = '0.'
+    }
+
+    const rawNext = `${before}${insertValue}${after}`
+    const rawCaret = before.length + insertValue.length
+    const nextCaret = normalizeMoneyInputValue(rawNext.slice(0, rawCaret)).length
+
+    setCashTopupAmountFromKeypad(rawNext, { start: nextCaret, end: nextCaret })
+  }
+
+  function backspaceCashTopupKeypadValue() {
+    const current = normalizeMoneyInputValue(cashTopupAmount)
+    const range = clampTextSelectionRange(
+      cashTopupCaretRangeRef.current.start,
+      cashTopupCaretRangeRef.current.end,
+      current.length,
+    )
+
+    if (range.start !== range.end) {
+      const rawNext = `${current.slice(0, range.start)}${current.slice(range.end)}`
+      const nextCaret = normalizeMoneyInputValue(rawNext.slice(0, range.start)).length
+      setCashTopupAmountFromKeypad(rawNext, { start: nextCaret, end: nextCaret })
+      return
+    }
+
+    if (range.start <= 0) {
+      setCashTopupAmountFromKeypad(current, { start: 0, end: 0 })
+      return
+    }
+
+    const rawNext = `${current.slice(0, range.start - 1)}${current.slice(range.start)}`
+    const nextCaret = normalizeMoneyInputValue(rawNext.slice(0, range.start - 1)).length
+
+    setCashTopupAmountFromKeypad(rawNext, { start: nextCaret, end: nextCaret })
+  }
+
   function setSearchQueryFromKeypad(nextValue: string, nextRange: TextSelectionRange) {
     const normalized = normalizeSearchValue(nextValue)
     const clampedRange = clampTextSelectionRange(nextRange.start, nextRange.end, normalized.length)
@@ -1277,10 +1422,13 @@ function App() {
       return
     }
 
-    if (mainKeypadTarget === 'cashTopup' || mainKeypadTarget === 'sbpTopup') {
-      const setter = mainKeypadTarget === 'cashTopup' ? setCashTopupAmount : setSbpAmount
+    if (mainKeypadTarget === 'cashTopup') {
+      insertCashTopupKeypadValue(value)
+      return
+    }
 
-      setter((current) => {
+    if (mainKeypadTarget === 'sbpTopup') {
+      setSbpAmount((current) => {
         const raw = String(current || '').replace(',', '.').replace(/[^0-9.]/g, '')
 
         if (value === '.' && raw.includes('.')) {
@@ -1313,7 +1461,7 @@ function App() {
     }
 
     if (mainKeypadTarget === 'cashTopup') {
-      setCashTopupAmount((current) => String(current || '').slice(0, -1))
+      backspaceCashTopupKeypadValue()
       return
     }
 
@@ -1334,7 +1482,7 @@ function App() {
     }
 
     if (mainKeypadTarget === 'cashTopup') {
-      setCashTopupAmount('')
+      setCashTopupAmountFromKeypad('', { start: 0, end: 0 })
       return
     }
 
@@ -1427,6 +1575,27 @@ function App() {
                 onKeyUp={(e) => rememberSearchCaret(e.currentTarget, 'keypad')}
                 onSelect={(e) => rememberSearchCaret(e.currentTarget, 'keypad')}
                 onChange={(e) => handleSearchInputChange(e.target.value, e.currentTarget, 'keypad')}
+              />
+            ) : mainKeypadTarget === 'cashTopup' ? (
+              <input
+                ref={mainKeypadCashTopupInputRef}
+                className="mainKeypadValueInput"
+                type="text"
+                value={cashTopupAmount}
+                placeholder="0"
+                inputMode="none"
+                autoComplete="off"
+                onFocus={(e) => rememberCashTopupCaret(e.currentTarget, 'keypad')}
+                onClick={(e) => rememberCashTopupCaret(e.currentTarget, 'keypad')}
+                onKeyUp={(e) => rememberCashTopupCaret(e.currentTarget, 'keypad')}
+                onSelect={(e) => rememberCashTopupCaret(e.currentTarget, 'keypad')}
+                onChange={(e) => handleCashTopupAmountChange(e.target.value, e.currentTarget, 'keypad')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    openCashTopupConfirm()
+                  }
+                }}
               />
             ) : (
               <span>{value || '0'}</span>
@@ -6639,8 +6808,9 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               <div className="sumBox">
                 <label>Сумма операции</label>
                 <input
+                  ref={cashTopupInputRef}
                   value={cashTopupAmount}
-                  onChange={(e) => setCashTopupAmount(e.target.value)}
+                  onChange={(e) => handleCashTopupAmountChange(e.target.value, e.currentTarget, 'main')}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
@@ -6650,14 +6820,19 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                       }
                     }
                   }}
-                  onFocus={() => {
+                  onFocus={(e) => {
+                    activeCashTopupInputSourceRef.current = 'main'
+                    rememberCashTopupCaret(e.currentTarget, 'main')
                     if (shouldUseTouchKeypad()) setMainKeypadTarget('cashTopup')
                   }}
-                  onClick={() => {
+                  onClick={(e) => {
+                    activeCashTopupInputSourceRef.current = 'main'
+                    rememberCashTopupCaret(e.currentTarget, 'main')
                     if (shouldUseTouchKeypad()) setMainKeypadTarget('cashTopup')
                   }}
+                  onKeyUp={(e) => rememberCashTopupCaret(e.currentTarget, 'main')}
+                  onSelect={(e) => rememberCashTopupCaret(e.currentTarget, 'main')}
                   placeholder="Сумма наличными"
-                  readOnly={shouldUseTouchKeypad()}
                   inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
                   enterKeyHint="done"
                 />
