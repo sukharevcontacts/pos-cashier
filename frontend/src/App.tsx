@@ -3798,6 +3798,29 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
     })
   }
 
+  useEffect(() => {
+    if (!quickItemDropdownOpen) return
+
+    function handleQuickItemOutsidePointerDown(event: PointerEvent) {
+      const row = quickAddRowRef.current
+      const target = event.target as Node | null
+
+      if (!row || !target) return
+
+      if (row.contains(target)) {
+        return
+      }
+
+      setQuickItemDropdownOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handleQuickItemOutsidePointerDown, true)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleQuickItemOutsidePointerDown, true)
+    }
+  }, [quickItemDropdownOpen])
+
   async function searchQuickItems(query: string) {
     if (!cashier || !selectedStore || !orderDetails) return
 
@@ -5678,7 +5701,10 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   setQuickItemDropdownOpen(true)
                 }}
                 onFocus={() => {
-                  if (quickItemMatches.length > 0) setQuickItemDropdownOpen(true)
+                  if (quickItemCode.trim()) setQuickItemDropdownOpen(true)
+                }}
+                onClick={() => {
+                  if (quickItemCode.trim()) setQuickItemDropdownOpen(true)
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
