@@ -4,10 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "npm run write-app-version && vite",
+    "build": "npm run write-app-version && tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "write-app-version": "node scripts/write-app-version.cjs"
   },
   "dependencies": {
     "react": "^19.2.5",

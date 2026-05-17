@@ -4442,3 +4442,101 @@ body[data-screen-profile="tablet_10"] .cashierTabletCardMeta {
 }
 /* END POS cashier tablet card photos */
 
+/* POS PWA update settings */
+.sideMenuTabButton.hasUpdate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.appUpdateMenuBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e53935;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.appUpdateSection {
+  gap: 12px;
+}
+
+.appUpdateStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #e8f5e9;
+  color: #1b5e20;
+  font-weight: 800;
+}
+
+.appUpdateStatus.available {
+  background: #fff3cd;
+  color: #7a4d00;
+}
+
+.appUpdateStatus small {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.appUpdateVersionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid #eeeeee;
+  border-radius: 12px;
+  background: #fafafa;
+  font-size: 13px;
+}
+
+.appUpdateVersionGrid span {
+  color: #666;
+}
+
+.appUpdateVersionGrid b {
+  color: #222;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.appUpdateActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.appUpdateActions button {
+  min-height: 42px;
+}
+
+.appUpdateMessage {
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f5f5f5;
+}
+
+body[data-screen-profile="tablet_10"] .appUpdateActions button {
+  min-height: 38px;
+  height: auto;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+body[data-screen-profile="tablet_10"] .appUpdateVersionGrid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+/* END POS PWA update settings */
+

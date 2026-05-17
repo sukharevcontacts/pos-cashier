@@ -47,6 +47,25 @@ function isStaticAsset(url) {
   )
 }
 
+
+self.addEventListener('message', (event) => {
+  const type = event.data && event.data.type
+
+  if (type === 'POS_SKIP_WAITING') {
+    self.skipWaiting()
+    return
+  }
+
+  if (type === 'POS_CLEAR_CACHES') {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        .then(() => self.clients.claim()),
+    )
+  }
+})
+
 self.addEventListener('fetch', (event) => {
   const request = event.request
 
