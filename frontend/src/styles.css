@@ -4659,3 +4659,77 @@ body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection .appUpdateActio
 }
 /* END POS side menu bottom compact */
 
+/* POS order line stock receipt button */
+.lineHeader,
+.lineRow {
+  grid-template-columns: 1fr 120px 120px 140px 92px;
+}
+
+.lineRowActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.lineStockReceiptButton {
+  width: 82px;
+  min-height: 42px;
+  height: 42px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+body[data-screen-profile="tablet_10"] .lineHeader,
+body[data-screen-profile="tablet_10"] .lineRow {
+  grid-template-columns: 1fr 82px 88px 104px 76px;
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .lineStockReceiptButton {
+  width: 70px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .lineHeader,
+  .lineRow {
+    grid-template-columns: 1fr 74px 82px 92px 72px;
+    gap: 7px;
+  }
+
+  .lineStockReceiptButton {
+    width: 66px;
+    min-height: 34px;
+    height: 34px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+}
+/* END POS order line stock receipt button */
+
+/* POS order line stock receipt green button */
+.lineStockReceiptButton {
+  background: #2e7d32 !important;
+  border-color: #2e7d32 !important;
+  color: #ffffff !important;
+}
+
+.lineStockReceiptButton:hover {
+  background: #256d29 !important;
+  border-color: #256d29 !important;
+  color: #ffffff !important;
+}
+
+.lineStockReceiptButton:active {
+  background: #1f5f23 !important;
+  border-color: #1f5f23 !important;
+}
+/* END POS order line stock receipt green button */
+

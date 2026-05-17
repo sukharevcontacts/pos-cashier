@@ -2622,6 +2622,53 @@ function App() {
     }, 0)
   }
 
+
+  function mapOrderLineToStoreItem(line: OrderLine): StoreItem {
+    const itemId = toSafeInt(line.item || line.good_id || line.id, 0)
+    const itemName = String(line.item_name || line.good_name || line.name || `Товар ${itemId}`)
+
+    return {
+      good_id: toSafeInt(line.good_id || itemId, itemId),
+      good_name: String(line.good_name || itemName),
+      id: toSafeInt(line.id || itemId, itemId),
+      name: String(line.name || itemName),
+      code: line.code ?? null,
+      isfractional: Boolean(line.isfractional),
+      unit: line.unit ?? line.pack ?? null,
+      category: null,
+      currency: null,
+      item: itemId,
+      item_name: itemName,
+      item_category: null,
+      item_subcategory: null,
+      photo_url: line.photo_url ?? null,
+      avg_weight: line.avg_weight ?? null,
+      pack: line.pack ?? line.unit ?? null,
+      price: toNumber(line.price, 0),
+      item_stock: toNumber(line.item_stock, 0),
+      reserve: toNumber(line.reserve, 0),
+      available_qty: toNumber(line.available_qty, 0),
+    }
+  }
+
+  function openStockReceiptScreenForOrderLine(line: OrderLine) {
+    const item = mapOrderLineToStoreItem(line)
+
+    resetStockReceiptState()
+    setStockSelectedItem(item)
+    setStockSearchQuery(item.item_name)
+    setStockSearchItems([])
+    setStockForm({
+      item: String(item.item),
+      qty_delta: '',
+      comment: '',
+    })
+    setStockQtyCaretIndex(0)
+    setStockMessage(`Выбран товар: ${item.item_name}, код ${item.item}`)
+    setStockDialogOpen(true)
+    setError('')
+  }
+
   function closeStockReceiptScreen() {
     setStockDialogOpen(false)
     resetStockReceiptState()
@@ -2644,6 +2691,21 @@ function App() {
     if (stockSearchItems.length === 0) {
       await loadStockSearchItems(normalizedQuery)
     }
+  }
+
+  function sortItemsByStockDesc(items: StoreItem[]) {
+    return [...items].sort((a, b) => {
+      const stockA = toNumber(a.item_stock, 0)
+      const stockB = toNumber(b.item_stock, 0)
+
+      // Нулевые и отрицательные остатки отправляем ниже товаров с остатком.
+      // Между собой нулевые можно не сортировать.
+      if (stockA <= 0 && stockB <= 0) return 0
+      if (stockA <= 0) return 1
+      if (stockB <= 0) return -1
+
+      return stockB - stockA
+    })
   }
 
   async function searchProductsForSelector(query: string, options: { limit?: number; showavailable?: boolean } = {}) {
@@ -2697,7 +2759,11 @@ function App() {
       const limit = target === 'picker' ? 100 : target === 'stockView' ? 150 : 30
       const showavailable = target === 'picker' ? true : false
       const items = await searchProductsForSelector(query, { limit, showavailable })
-      setItems(items)
+      const sortedItems = target === 'stockReceipt' || target === 'stockView'
+        ? sortItemsByStockDesc(items)
+        : items
+
+      setItems(sortedItems)
     } catch (e: any) {
       setItems([])
       setError(e.message || 'Ошибка поиска товара')
@@ -2962,7 +3028,10 @@ function App() {
     setError('')
 
     try {
-      const items = await searchProductsForSelector(normalizedQuery, { limit: 150, showavailable: false })
+      const items = sortItemsByStockDesc(
+        await searchProductsForSelector(normalizedQuery, { limit: 150, showavailable: false })
+      )
+
       setStockViewItems(items)
 
       if (options.selectSingle && items.length === 1) {
@@ -5658,10 +5727,11 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   <span>Кол-во</span>
                   <span>Цена</span>
                   <span>Сумма</span>
+                  <span></span>
                 </div>
 
                 {activeOrderLines.map((line) => (
-                  <button
+                  <div
                     className={[
                       'lineRow',
                       line.isfractional ? 'weightLineRow' : '',
@@ -5671,12 +5741,20 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                       swipeAnimatingLineId === getOrderLineUiId(line) ? 'swipeDeleteAnimating' : '',
                     ].filter(Boolean).join(' ')}
                     key={getOrderLineUiId(line)}
+                    role="button"
+                    tabIndex={0}
                     onPointerDown={(e) => handleLinePointerDown(e, line)}
                     onPointerUp={(e) => handleLinePointerUp(e, line)}
                     onPointerMove={(e) => handleLinePointerMove(e, line)}
                     onPointerCancel={handleLinePointerCancel}
                     style={getOrderLineRowStyle(line, swipeDragLineId, swipeAnimatingLineId, swipeDragX, swipeCommitX)}
                     onClick={() => handleLineRowClick(line)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleLineRowClick(line)
+                      }
+                    }}
                   >
                     <span>
                       <b>{line.item_name}</b>
@@ -5687,7 +5765,23 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                     <span>{formatQty(line.qty_final, line.isfractional)}</span>
                     <span>{formatMoney(line.price)}</span>
                     <span>{formatMoney(line.line_sum)}</span>
-                  </button>
+                    <span className="lineRowActions">
+                      <button
+                        type="button"
+                        className="secondary lineStockReceiptButton"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onPointerUp={(e) => e.stopPropagation()}
+                        onPointerMove={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openStockReceiptScreenForOrderLine(line)
+                        }}
+                      >
+                        Приход
+                      </button>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
