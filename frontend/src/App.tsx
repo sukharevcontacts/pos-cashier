@@ -315,6 +315,7 @@ const SESSION_ID_STORAGE_KEY = 'session_id'
 const STORE_ID_STORAGE_KEY = 'store_id'
 const CASHIER_STORAGE_KEY = 'cashier'
 const STORES_STORAGE_KEY = 'stores'
+const SCREEN_PROFILE_STORAGE_KEY = 'screen_profile'
 
 function readStoredSessionId() {
   if (typeof window === 'undefined') return ''
@@ -365,6 +366,19 @@ function saveStoredJson(key: string, value: unknown) {
 function clearStoredJson(key: string) {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(key)
+}
+
+function readStoredScreenProfile(): ScreenProfile {
+  if (typeof window === 'undefined') return 'auto'
+
+  const value = window.sessionStorage.getItem(SCREEN_PROFILE_STORAGE_KEY)
+
+  return value === 'tablet_10' ? 'tablet_10' : 'auto'
+}
+
+function saveStoredScreenProfile(value: ScreenProfile) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(SCREEN_PROFILE_STORAGE_KEY, value)
 }
 
 function readStoredCashier(): Cashier | null {
@@ -757,7 +771,7 @@ function App() {
   const [sideMenuOpen, setSideMenuOpen] = useState(false)
   const [sideMenuTab, setSideMenuTab] = useState<SideMenuTab>('root')
   const [appExitNoticeOpen, setAppExitNoticeOpen] = useState(false)
-  const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
+  const [screenProfile, setScreenProfile] = useState<ScreenProfile>(() => readStoredScreenProfile())
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [appUpdateChecking, setAppUpdateChecking] = useState(false)
   const [appUpdateAvailable, setAppUpdateAvailable] = useState(false)
@@ -1137,14 +1151,20 @@ function App() {
       }
 
       const data: CashierSettings = await res.json()
-      setScreenProfile(data.screen_profile === 'tablet_10' ? 'tablet_10' : 'auto')
+      const nextProfile: ScreenProfile = data.screen_profile === 'tablet_10' ? 'tablet_10' : 'auto'
+
+      setScreenProfile(nextProfile)
+      saveStoredScreenProfile(nextProfile)
     } catch {
-      setScreenProfile('auto')
+      // При проблеме загрузки с backend не сбрасываем режим в auto.
+      // Оставляем последнюю локально сохранённую настройку.
+      setScreenProfile(readStoredScreenProfile())
     }
   }
 
   async function saveScreenProfile(nextProfile: ScreenProfile) {
     setScreenProfile(nextProfile)
+    saveStoredScreenProfile(nextProfile)
 
     if (!cashier) {
       return
@@ -1172,6 +1192,14 @@ function App() {
       setSettingsSaving(false)
     }
   }
+
+
+  // load settings after restoring cashier from sessionStorage / PWA refresh
+  useEffect(() => {
+    if (!cashier?.cashier_account) return
+
+    void loadCashierSettings(cashier.cashier_account)
+  }, [cashier?.cashier_account])
 
   function formatAppVersionLabel(version: string) {
     if (!version || version === 'development') return 'локальная версия'
