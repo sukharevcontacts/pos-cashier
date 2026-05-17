@@ -8,6 +8,7 @@ from app.api import (
     order_receipt,
     transactions,
     cashier_settings,
+    cashier_tablet,
     status,
     cash,
 )
@@ -22,5 +23,6 @@ api_router.include_router(items.router)
 api_router.include_router(order_receipt.router)
 api_router.include_router(transactions.router)
 api_router.include_router(cashier_settings.router)
+api_router.include_router(cashier_tablet.router)
 api_router.include_router(status.router)
 api_router.include_router(cash.router)

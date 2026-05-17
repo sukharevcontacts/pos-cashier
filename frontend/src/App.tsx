@@ -206,6 +206,33 @@ type StoreItem = {
   available_qty: number
 }
 
+type CashierTabletItem = {
+  id: number
+  store_id: number
+  product_id: number
+  sort_order: number
+  is_active: boolean
+  is_available: boolean
+  name: string
+  code?: string | null
+  unit?: string | null
+  isfractional?: boolean | null
+  photo_url?: string | null
+  product?: any | null
+  fallback?: {
+    product_name?: string | null
+    product_code?: string | null
+    product_unit?: string | null
+    product_isfractional?: boolean | null
+    product_photo_url?: string | null
+  }
+  last_synced_at?: string | null
+  last_available_at?: string | null
+  last_unavailable_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 type ItemCategoryGroup = {
   category: string
   items_count: number
@@ -903,6 +930,16 @@ function App() {
   const [itemCategories, setItemCategories] = useState<ItemCategoryGroup[]>([])
   const [selectedItemCategory, setSelectedItemCategory] = useState('')
   const [selectedItemSubcategory, setSelectedItemSubcategory] = useState('')
+  const [cashierTabletOpen, setCashierTabletOpen] = useState(false)
+  const [cashierTabletLoading, setCashierTabletLoading] = useState(false)
+  const [cashierTabletItems, setCashierTabletItems] = useState<CashierTabletItem[]>([])
+  const [cashierTabletMessage, setCashierTabletMessage] = useState('')
+  const [cashierTabletSearchQuery, setCashierTabletSearchQuery] = useState('')
+  const [cashierTabletSearchLoading, setCashierTabletSearchLoading] = useState(false)
+  const [cashierTabletSearchItems, setCashierTabletSearchItems] = useState<StoreItem[]>([])
+  const [cashierTabletReorderMode, setCashierTabletReorderMode] = useState(false)
+  const [cashierTabletOrderDraft, setCashierTabletOrderDraft] = useState<number[]>([])
+  const [cashierTabletSaving, setCashierTabletSaving] = useState(false)
 
   const [qtyDialogLine, setQtyDialogLine] = useState<OrderLine | null>(null)
   const [deleteLineConfirmOpen, setDeleteLineConfirmOpen] = useState(false)
@@ -3645,6 +3682,299 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
     }
   }
 
+  function applyCashierTabletResponse(data: any) {
+    const items = Array.isArray(data?.items) ? data.items as CashierTabletItem[] : []
+    setCashierTabletItems(items)
+    setCashierTabletOrderDraft(items.map((item) => toSafeInt(item.product_id, 0)).filter((productId) => productId > 0))
+  }
+
+  function mapCashierTabletItemToStoreItem(tabletItem: CashierTabletItem): StoreItem | null {
+    if (!tabletItem.is_available || !tabletItem.product) {
+      return null
+    }
+
+    const mapped = mapParitetProductToStoreItem(tabletItem.product)
+
+    if (!mapped.item) {
+      return null
+    }
+
+    return mapped
+  }
+
+  function getCashierTabletDisplayItems() {
+    if (!cashierTabletReorderMode) {
+      return cashierTabletItems
+    }
+
+    const byProductId = new Map(cashierTabletItems.map((item) => [toSafeInt(item.product_id, 0), item]))
+    const ordered = cashierTabletOrderDraft
+      .map((productId) => byProductId.get(productId))
+      .filter((item): item is CashierTabletItem => Boolean(item))
+    const orderedIds = new Set(ordered.map((item) => toSafeInt(item.product_id, 0)))
+    const missed = cashierTabletItems.filter((item) => !orderedIds.has(toSafeInt(item.product_id, 0)))
+
+    return [...ordered, ...missed]
+  }
+
+  async function loadCashierTablet() {
+    if (!cashier || !selectedStore) return
+
+    setCashierTabletLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        store_id: String(selectedStore.store_id),
+        cashier_account: String(cashier.cashier_account),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cashier/tablet?${params.toString()}`, {
+        headers: {
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось загрузить планшет'))
+      }
+
+      const data = await res.json()
+      applyCashierTabletResponse(data)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка загрузки планшета')
+    } finally {
+      setCashierTabletLoading(false)
+    }
+  }
+
+  async function openCashierTablet() {
+    if (!cashier || !selectedStore) return
+
+    setCashierTabletOpen(true)
+    setCashierTabletMessage('')
+    setCashierTabletSearchQuery('')
+    setCashierTabletSearchItems([])
+    setCashierTabletReorderMode(false)
+    await loadCashierTablet()
+  }
+
+  function closeCashierTablet() {
+    setCashierTabletOpen(false)
+    setCashierTabletMessage('')
+    setCashierTabletSearchQuery('')
+    setCashierTabletSearchItems([])
+    setCashierTabletReorderMode(false)
+  }
+
+  async function searchCashierTabletProducts(query: string) {
+    const normalizedQuery = query.trim()
+
+    if (!normalizedQuery) {
+      setCashierTabletSearchItems([])
+      return
+    }
+
+    if (!/^\d+$/.test(normalizedQuery) && normalizedQuery.length < 2) {
+      setCashierTabletSearchItems([])
+      return
+    }
+
+    setCashierTabletSearchLoading(true)
+    setError('')
+
+    try {
+      const items = await searchProductsForSelector(normalizedQuery, { limit: 30, showavailable: true })
+      setCashierTabletSearchItems(items.filter((item) => item.available_qty > 0))
+    } catch (e: any) {
+      setCashierTabletSearchItems([])
+      setError(e.message || 'Ошибка поиска товара для планшета')
+    } finally {
+      setCashierTabletSearchLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!cashierTabletOpen) return
+
+    const normalizedQuery = cashierTabletSearchQuery.trim()
+
+    if (!normalizedQuery) {
+      setCashierTabletSearchItems([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void searchCashierTabletProducts(normalizedQuery)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [cashierTabletOpen, cashierTabletSearchQuery, selectedStore?.store_id])
+
+  async function addItemToCashierTablet(item: StoreItem) {
+    if (!cashier || !selectedStore) return
+
+    setCashierTabletSaving(true)
+    setCashierTabletMessage('')
+    setError('')
+
+    try {
+      const res = await apiFetch(`${API_BASE}/cashier/tablet/items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+        body: JSON.stringify({
+          store_id: selectedStore.store_id,
+          product_id: item.item,
+          cashier_account: String(cashier.cashier_account),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось добавить товар в планшет'))
+      }
+
+      const data = await res.json()
+      applyCashierTabletResponse(data)
+      setCashierTabletSearchQuery('')
+      setCashierTabletSearchItems([])
+      setCashierTabletMessage(`Товар «${item.item_name}» добавлен в планшет`)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка добавления товара в планшет')
+    } finally {
+      setCashierTabletSaving(false)
+    }
+  }
+
+  async function deleteItemFromCashierTablet(tabletItem: CashierTabletItem) {
+    if (!cashier || !selectedStore) return
+
+    setCashierTabletSaving(true)
+    setCashierTabletMessage('')
+    setError('')
+
+    try {
+      const res = await apiFetch(`${API_BASE}/cashier/tablet/items/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+        body: JSON.stringify({
+          store_id: selectedStore.store_id,
+          product_id: tabletItem.product_id,
+          cashier_account: String(cashier.cashier_account),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось удалить товар из планшета'))
+      }
+
+      const data = await res.json()
+      applyCashierTabletResponse(data)
+      setCashierTabletMessage(`Товар «${tabletItem.name || tabletItem.fallback?.product_name || tabletItem.product_id}» убран из планшета`)
+    } catch (e: any) {
+      setError(e.message || 'Ошибка удаления товара из планшета')
+    } finally {
+      setCashierTabletSaving(false)
+    }
+  }
+
+  function startCashierTabletReorder() {
+    setCashierTabletOrderDraft(cashierTabletItems.map((item) => toSafeInt(item.product_id, 0)).filter((productId) => productId > 0))
+    setCashierTabletReorderMode(true)
+    setCashierTabletMessage('Режим изменения порядка: перемещайте карточки и нажмите «Сохранить порядок»')
+  }
+
+  function cancelCashierTabletReorder() {
+    setCashierTabletOrderDraft(cashierTabletItems.map((item) => toSafeInt(item.product_id, 0)).filter((productId) => productId > 0))
+    setCashierTabletReorderMode(false)
+    setCashierTabletMessage('')
+  }
+
+  function moveCashierTabletItem(productId: number, direction: -1 | 1) {
+    setCashierTabletOrderDraft((current) => {
+      const next = current.length ? [...current] : cashierTabletItems.map((item) => toSafeInt(item.product_id, 0)).filter((id) => id > 0)
+      const index = next.indexOf(productId)
+      const targetIndex = index + direction
+
+      if (index < 0 || targetIndex < 0 || targetIndex >= next.length) {
+        return next
+      }
+
+      const [moved] = next.splice(index, 1)
+      next.splice(targetIndex, 0, moved)
+      return next
+    })
+  }
+
+  async function saveCashierTabletOrder() {
+    if (!cashier || !selectedStore) return
+
+    setCashierTabletSaving(true)
+    setError('')
+
+    try {
+      const productIds = cashierTabletOrderDraft.length
+        ? cashierTabletOrderDraft
+        : cashierTabletItems.map((item) => toSafeInt(item.product_id, 0)).filter((productId) => productId > 0)
+
+      const res = await apiFetch(`${API_BASE}/cashier/tablet/reorder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          store_id: String(selectedStore.store_id),
+          'store-id': String(selectedStore.store_id),
+        },
+        body: JSON.stringify({
+          store_id: selectedStore.store_id,
+          product_ids: productIds,
+          cashier_account: String(cashier.cashier_account),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(getErrorMessage(data, 'Не удалось сохранить порядок планшета'))
+      }
+
+      const data = await res.json()
+      applyCashierTabletResponse(data)
+      setCashierTabletReorderMode(false)
+      setCashierTabletMessage('Порядок планшета сохранён')
+    } catch (e: any) {
+      setError(e.message || 'Ошибка сохранения порядка планшета')
+    } finally {
+      setCashierTabletSaving(false)
+    }
+  }
+
+  async function addCashierTabletItemToOrder(tabletItem: CashierTabletItem) {
+    if (cashierTabletReorderMode || !orderDetails || orderDetails.readonly) return
+
+    const storeItem = mapCashierTabletItemToStoreItem(tabletItem)
+
+    if (!storeItem) {
+      setCashierTabletMessage('Товар сейчас недоступен для этой точки')
+      return
+    }
+
+    await addItemToCurrentOrder(storeItem, { keepSearchOpen: false })
+    setCashierTabletMessage(`Добавлено в заказ: ${storeItem.item_name}`)
+  }
+
+
   useEffect(() => {
     if (!orderDetails || orderDetails.readonly) {
       setQuickItemMatches([])
@@ -4574,6 +4904,154 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
 
 
+  function renderCashierTabletDialog() {
+    if (!cashierTabletOpen || !selectedStore) return null
+
+    const displayItems = getCashierTabletDisplayItems()
+    const existingProductIds = new Set(cashierTabletItems.map((item) => toSafeInt(item.product_id, 0)))
+
+    return (
+      <div className="itemPickerOverlay cashierTabletOverlay">
+        <div className="itemPicker cashierTabletDialog">
+          <div className="itemPickerHeader cashierTabletHeader">
+            <div>
+              <h2>Планшет</h2>
+              <p className="muted">Часто используемые товары для ТВТ: {selectedStore.store_name}</p>
+            </div>
+            <div className="cashierTabletHeaderActions">
+              <button className="secondary" onClick={loadCashierTablet} disabled={cashierTabletLoading || cashierTabletSaving}>
+                Обновить
+              </button>
+              <button className="secondary" onClick={closeCashierTablet}>
+                Закрыть
+              </button>
+            </div>
+          </div>
+
+          <div className="cashierTabletSearchPanel">
+            <div className="itemSearchRow cashierTabletSearchRow">
+              <input
+                placeholder="Введите ID, штрихкод или название товара"
+                value={cashierTabletSearchQuery}
+                onChange={(e) => setCashierTabletSearchQuery(e.target.value)}
+              />
+              <button
+                className="secondary"
+                onClick={() => void searchCashierTabletProducts(cashierTabletSearchQuery)}
+                disabled={cashierTabletSearchLoading || cashierTabletSaving}
+              >
+                {cashierTabletSearchLoading ? 'Ищем...' : 'Показать'}
+              </button>
+            </div>
+
+            {cashierTabletSearchItems.length > 0 && (
+              <div className="cashierTabletSearchResults">
+                {cashierTabletSearchItems.map((item) => {
+                  const alreadyAdded = existingProductIds.has(item.item)
+
+                  return (
+                    <button
+                      key={item.item}
+                      type="button"
+                      className="cashierTabletSearchResult"
+                      onClick={() => addItemToCashierTablet(item)}
+                      disabled={cashierTabletSaving || alreadyAdded || item.available_qty <= 0}
+                    >
+                      <span>
+                        <b>{item.item_name}</b>
+                        <small>ID {item.item}{item.code ? ` · ШК ${item.code}` : ''}</small>
+                      </span>
+                      <span>
+                        {alreadyAdded ? 'Уже в планшете' : 'Добавить в планшет'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="cashierTabletToolbar">
+            <div className="muted">
+              {cashierTabletLoading ? 'Загружаем планшет...' : `Карточек: ${cashierTabletItems.length}`}
+            </div>
+            <div className="cashierTabletToolbarActions">
+              {cashierTabletReorderMode ? (
+                <>
+                  <button className="secondary" onClick={cancelCashierTabletReorder} disabled={cashierTabletSaving}>
+                    Отмена
+                  </button>
+                  <button className="primary" onClick={saveCashierTabletOrder} disabled={cashierTabletSaving}>
+                    {cashierTabletSaving ? 'Сохраняем...' : 'Сохранить порядок'}
+                  </button>
+                </>
+              ) : (
+                <button className="secondary" onClick={startCashierTabletReorder} disabled={cashierTabletItems.length < 2 || cashierTabletLoading}>
+                  Изменить порядок
+                </button>
+              )}
+            </div>
+          </div>
+
+          {cashierTabletMessage && <div className="notice">{cashierTabletMessage}</div>}
+          {error && <div className="error">{error}</div>}
+
+          <div className="cashierTabletGrid">
+            {!cashierTabletLoading && displayItems.length === 0 && (
+              <div className="emptyBox cashierTabletEmpty">Добавьте товары через поиск выше</div>
+            )}
+
+            {displayItems.map((tabletItem) => {
+              const productId = toSafeInt(tabletItem.product_id, 0)
+              const isAvailable = Boolean(tabletItem.is_available && tabletItem.product)
+              const title = tabletItem.name || tabletItem.fallback?.product_name || `Товар ${productId}`
+              const index = cashierTabletOrderDraft.indexOf(productId)
+
+              return (
+                <div
+                  key={productId || tabletItem.id}
+                  className={[
+                    'cashierTabletCard',
+                    isAvailable ? '' : 'disabled',
+                    cashierTabletReorderMode ? 'reorderMode' : '',
+                  ].filter(Boolean).join(' ')}
+                  role="button"
+                  tabIndex={isAvailable && !cashierTabletReorderMode ? 0 : -1}
+                  onClick={() => addCashierTabletItemToOrder(tabletItem)}
+                >
+                  <div className="cashierTabletCardName">{title}</div>
+                  <div className="cashierTabletCardMeta">
+                    ID {productId}{tabletItem.code ? ` · ${tabletItem.code}` : ''}
+                  </div>
+                  {!isAvailable && <div className="cashierTabletUnavailable">Недоступно</div>}
+
+                  {cashierTabletReorderMode ? (
+                    <div className="cashierTabletCardControls">
+                      <button type="button" className="secondary" onClick={(e) => { e.stopPropagation(); moveCashierTabletItem(productId, -1) }} disabled={index <= 0}>
+                        ←
+                      </button>
+                      <button type="button" className="secondary" onClick={(e) => { e.stopPropagation(); moveCashierTabletItem(productId, 1) }} disabled={index < 0 || index >= cashierTabletOrderDraft.length - 1}>
+                        →
+                      </button>
+                      <button type="button" className="secondary dangerLight" onClick={(e) => { e.stopPropagation(); void deleteItemFromCashierTablet(tabletItem) }} disabled={cashierTabletSaving}>
+                        Убрать
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="cashierTabletCardHint">
+                      {isAvailable ? 'Добавить в заказ' : 'Нет в доступных товарах ТВТ'}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+
   if (selectedStore && cashier && stockDialogOpen) {
     const stockActionButtonLabel = stockSearchQuery.trim()
       ? (stockSearchLoading ? 'Ищем...' : 'Показать')
@@ -4899,6 +5377,9 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
             </div>
           </div>
           <div className="topbarActions">
+            <button className="secondary" onClick={openCashierTablet}>
+              Планшет
+            </button>
             <button className="secondary" onClick={openStockReceiptScreen}>
               Приход
             </button>
@@ -4911,6 +5392,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
         {renderSideMenu()}
 
         {renderAppExitNotice()}
+
+        {renderCashierTabletDialog()}
 
         <main className="orderScreen">
           <section className="orderMain">
