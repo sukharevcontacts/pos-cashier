@@ -828,7 +828,7 @@ function App() {
   const [stockDialogOpen, setStockDialogOpen] = useState(false)
   const [stockLoading, setStockLoading] = useState(false)
   const [stockMessage, setStockMessage] = useState('')
-  const [stockSuccessDialog, setStockSuccessDialog] = useState<{ itemName: string; qty: string } | null>(null)
+  const [stockSuccessDialog, setStockSuccessDialog] = useState<{ itemName: string; qty: string; item: StoreItem | null } | null>(null)
   const [stockForm, setStockForm] = useState({
     item: '',
     qty_delta: '',
@@ -3108,6 +3108,7 @@ function App() {
       setStockSuccessDialog({
         itemName: successItemName,
         qty: successQty,
+        item: stockSelectedItem,
       })
 
       setStockForm((prev) => ({
@@ -4381,6 +4382,18 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
     }
   }
 
+  async function addStockSuccessItemToOrder() {
+    const item = stockSuccessDialog?.item || stockSelectedItem
+
+    if (!item) {
+      setError('Не удалось определить товар для добавления в заказ')
+      return
+    }
+
+    await addItemToCurrentOrder(item, { keepSearchOpen: false })
+    closeStockReceiptScreen()
+  }
+
   async function handleAddButton() {
     if (quickItemCode.trim()) {
       setQuickItemDropdownOpen(true)
@@ -5620,10 +5633,10 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               </div>
 
               <div className="confirmDialogActions">
-                <button className="secondary" onClick={() => setStockSuccessDialog(null)}>
-                  Ок
+                <button className="primary" onClick={addStockSuccessItemToOrder}>
+                  Добавить в заказ
                 </button>
-                <button className="primary" onClick={closeStockReceiptScreen}>
+                <button className="secondary" onClick={closeStockReceiptScreen}>
                   Закрыть приход
                 </button>
               </div>
