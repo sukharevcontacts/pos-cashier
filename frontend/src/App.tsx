@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import introImage from './assets/intro.jpg'
+import { APP_BUILT_AT, APP_VERSION } from './generated/appVersion'
 import './styles.css'
 
 type ScreenProfile = 'auto' | 'tablet_10'
@@ -758,6 +759,10 @@ function App() {
   const [appExitNoticeOpen, setAppExitNoticeOpen] = useState(false)
   const [screenProfile, setScreenProfile] = useState<ScreenProfile>('auto')
   const [settingsSaving, setSettingsSaving] = useState(false)
+  const [appUpdateChecking, setAppUpdateChecking] = useState(false)
+  const [appUpdateAvailable, setAppUpdateAvailable] = useState(false)
+  const [latestAppVersion, setLatestAppVersion] = useState('')
+  const [appUpdateMessage, setAppUpdateMessage] = useState('')
   const [mainKeypadTarget, setMainKeypadTarget] = useState<MainKeypadTarget>(null)
   const lastTopbarTapAt = useRef(0)
 
@@ -1167,6 +1172,113 @@ function App() {
       setSettingsSaving(false)
     }
   }
+
+  function formatAppVersionLabel(version: string) {
+    if (!version || version === 'development') return 'локальная версия'
+
+    const datePart = version.split('__')[0]
+    const parsed = new Date(datePart)
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleString('ru-RU')
+    }
+
+    return version
+  }
+
+  async function checkForAppUpdates(manual = false) {
+    if (typeof window === 'undefined') return
+
+    setAppUpdateChecking(true)
+    if (manual) setAppUpdateMessage('Проверяем обновления...')
+
+    try {
+      const versionUrl = `${import.meta.env.BASE_URL || '/pos/'}assets/app-version.json`
+      const res = await fetch(versionUrl, {
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      })
+
+      if (!res.ok) {
+        throw new Error('Не удалось получить версию приложения')
+      }
+
+      const bodyText = await res.text()
+
+      let data: any = null
+
+      try {
+        data = JSON.parse(bodyText)
+      } catch {
+        const shortBody = bodyText.trim().slice(0, 80)
+        throw new Error(
+          `Файл версии не отдается как JSON. Проверь /pos/assets/app-version.json. Ответ начинается с: ${shortBody}`,
+        )
+      }
+
+      const remoteVersion = String(data?.version || '')
+
+      setLatestAppVersion(remoteVersion)
+
+      if (remoteVersion && remoteVersion !== APP_VERSION) {
+        setAppUpdateAvailable(true)
+        setAppUpdateMessage('Есть обновление приложения')
+      } else {
+        setAppUpdateAvailable(false)
+        if (manual) setAppUpdateMessage('Установлена актуальная версия')
+      }
+    } catch (e: any) {
+      if (manual) {
+        setAppUpdateMessage(e?.message || 'Не удалось проверить обновления')
+      }
+    } finally {
+      setAppUpdateChecking(false)
+    }
+  }
+
+  async function refreshApplication() {
+    if (typeof window === 'undefined') return
+
+    setAppUpdateChecking(true)
+    setAppUpdateMessage('Обновляем приложение...')
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration('/pos/')
+
+        if (registration) {
+          await registration.update().catch(() => undefined)
+          registration.waiting?.postMessage({ type: 'POS_SKIP_WAITING' })
+          navigator.serviceWorker.controller?.postMessage({ type: 'POS_CLEAR_CACHES' })
+        }
+      }
+
+      if ('caches' in window) {
+        const keys = await window.caches.keys()
+        await Promise.all(keys.map((key) => window.caches.delete(key)))
+      }
+    } finally {
+      window.setTimeout(() => {
+        window.location.replace(`/pos/?app_refresh=${Date.now()}`)
+      }, 250)
+    }
+  }
+
+  useEffect(() => {
+    void checkForAppUpdates(false)
+
+    const timer = window.setInterval(() => {
+      void checkForAppUpdates(false)
+    }, 120000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [])
 
   function shouldUseTouchKeypad() {
     if (typeof window === 'undefined') return false
@@ -1857,6 +1969,47 @@ function App() {
                 <button className="secondary full sideMenuSwitchUserButton" onClick={logoutCashier}>
                   Сменить пользователя
                 </button>
+
+                <div className="sideMenuRootUpdateSection appUpdateSection">
+                  <div className={appUpdateAvailable ? 'appUpdateStatus available' : 'appUpdateStatus'}>
+                    <span>{appUpdateAvailable ? 'Есть обновление' : 'Приложение актуально'}</span>
+                    {appUpdateChecking && <small>Проверяем...</small>}
+                  </div>
+
+                  <div className="appUpdateVersionGrid">
+                    <span>Запущенная версия</span>
+                    <b>{formatAppVersionLabel(APP_BUILT_AT || APP_VERSION)}</b>
+
+                    {latestAppVersion && latestAppVersion !== APP_VERSION && (
+                      <>
+                        <span>Версия на сервере</span>
+                        <b>{formatAppVersionLabel(latestAppVersion)}</b>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="appUpdateActions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => void checkForAppUpdates(true)}
+                      disabled={appUpdateChecking}
+                    >
+                      Проверить обновления
+                    </button>
+
+                    <button
+                      type="button"
+                      className={appUpdateAvailable ? 'primary' : 'secondary'}
+                      onClick={() => void refreshApplication()}
+                      disabled={appUpdateChecking}
+                    >
+                      Обновить приложение
+                    </button>
+                  </div>
+
+                  {appUpdateMessage && <p className="sideMenuHint appUpdateMessage">{appUpdateMessage}</p>}
+                </div>
                 <button className="secondary full sideMenuExitButton" onClick={exitApplication}>
                   Выйти
                 </button>

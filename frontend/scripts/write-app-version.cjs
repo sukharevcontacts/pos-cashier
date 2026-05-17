@@ -24,18 +24,21 @@ const generatedDir = path.join(rootDir, 'src', 'generated')
 fs.mkdirSync(publicDir, { recursive: true })
 fs.mkdirSync(generatedDir, { recursive: true })
 
-fs.writeFileSync(
-  path.join(publicDir, 'app-version.json'),
-  JSON.stringify(
-    {
-      version,
-      built_at: builtAt,
-      commit,
-    },
-    null,
-    2,
-  ) + '\n',
-)
+const appVersionJson = JSON.stringify(
+  {
+    version,
+    built_at: builtAt,
+    commit,
+  },
+  null,
+  2,
+) + '\n'
+
+fs.writeFileSync(path.join(publicDir, 'app-version.json'), appVersionJson)
+
+const publicAssetsDir = path.join(publicDir, 'assets')
+fs.mkdirSync(publicAssetsDir, { recursive: true })
+fs.writeFileSync(path.join(publicAssetsDir, 'app-version.json'), appVersionJson)
 
 fs.writeFileSync(
   path.join(generatedDir, 'appVersion.ts'),

@@ -4540,3 +4540,122 @@ body[data-screen-profile="tablet_10"] .appUpdateVersionGrid {
 }
 /* END POS PWA update settings */
 
+/* POS PWA update root menu */
+.sideMenuRootUpdateSection {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #f7f7f7;
+  border: 1px solid #eeeeee;
+}
+
+.sideMenuRootUpdateSection .appUpdateStatus {
+  padding: 9px 10px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.sideMenuRootUpdateSection .appUpdateVersionGrid {
+  padding: 9px 10px;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.sideMenuRootUpdateSection .appUpdateVersionGrid b {
+  font-size: 13px;
+}
+
+.sideMenuRootUpdateSection .appUpdateActions {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sideMenuRootUpdateSection .appUpdateActions button {
+  min-height: 42px;
+  height: auto;
+  padding: 8px 10px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.sideMenuRootUpdateSection .appUpdateMessage {
+  margin: 0;
+  text-align: center;
+}
+
+body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection {
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+}
+
+body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection .appUpdateActions button {
+  min-height: 38px;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+/* END POS PWA update root menu */
+
+/* POS side menu bottom compact */
+/* Нижний блок выезжающего меню: смена ТВТ, смена пользователя, обновление, выход */
+.sideMenuRoot .sideMenuSwitchStoreButton,
+.sideMenuRoot .sideMenuSwitchUserButton {
+  margin-top: 0;
+  margin-bottom: 6px;
+}
+
+.sideMenuRootUpdateSection {
+  margin-top: 2px;
+  margin-bottom: 8px;
+  gap: 7px;
+  padding: 10px;
+}
+
+.sideMenuRootUpdateSection .appUpdateStatus {
+  padding: 7px 9px;
+}
+
+.sideMenuRootUpdateSection .appUpdateVersionGrid {
+  padding: 7px 9px;
+}
+
+.sideMenuRootUpdateSection .appUpdateActions {
+  gap: 7px;
+}
+
+.sideMenuRootUpdateSection .appUpdateActions button {
+  min-height: 38px;
+  padding: 7px 8px;
+}
+
+.sideMenuRootUpdateSection .appUpdateMessage {
+  padding: 7px 8px;
+}
+
+.sideMenuRoot .sideMenuExitButton,
+.sideMenuRoot button.sideMenuExitButton,
+.sideMenuRoot .sideMenuCloseAppButton,
+.sideMenuRoot button.sideMenuCloseAppButton {
+  margin-top: 0;
+}
+
+body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection {
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection .appUpdateStatus,
+body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection .appUpdateVersionGrid {
+  padding: 6px 8px;
+}
+
+body[data-screen-profile="tablet_10"] .sideMenuRootUpdateSection .appUpdateActions button {
+  min-height: 34px;
+  padding: 6px 7px;
+}
+/* END POS side menu bottom compact */
+

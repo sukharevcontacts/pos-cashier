@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-cashier-pwa-v3'
+const CACHE_NAME = 'pos-cashier-pwa-v5'
 
 const STATIC_CACHE_PATHS = [
   '/pos/',
@@ -67,6 +67,19 @@ self.addEventListener('message', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
+  {
+    const versionUrl = new URL(event.request.url)
+
+    if (
+      event.request.method === 'GET' &&
+      versionUrl.origin === self.location.origin &&
+      (versionUrl.pathname === '/pos/app-version.json' || versionUrl.pathname === '/pos/assets/app-version.json')
+    ) {
+      event.respondWith(fetch(event.request, { cache: 'no-store' }))
+      return
+    }
+  }
+
   const request = event.request
 
   if (request.method !== 'GET') return
