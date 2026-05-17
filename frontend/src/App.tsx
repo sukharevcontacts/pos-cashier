@@ -4919,6 +4919,20 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               <p className="muted">Часто используемые товары для ТВТ: {selectedStore.store_name}</p>
             </div>
             <div className="cashierTabletHeaderActions">
+              {cashierTabletReorderMode ? (
+                <>
+                  <button className="secondary" onClick={cancelCashierTabletReorder} disabled={cashierTabletSaving}>
+                    Отмена
+                  </button>
+                  <button className="primary" onClick={saveCashierTabletOrder} disabled={cashierTabletSaving}>
+                    {cashierTabletSaving ? 'Сохраняем...' : 'Сохранить порядок'}
+                  </button>
+                </>
+              ) : (
+                <button className="secondary" onClick={startCashierTabletReorder} disabled={cashierTabletItems.length < 2 || cashierTabletLoading}>
+                  Изменить порядок
+                </button>
+              )}
               <button className="secondary" onClick={loadCashierTablet} disabled={cashierTabletLoading || cashierTabletSaving}>
                 Обновить
               </button>
@@ -4971,28 +4985,6 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
             )}
           </div>
 
-          <div className="cashierTabletToolbar">
-            <div className="muted">
-              {cashierTabletLoading ? 'Загружаем планшет...' : `Карточек: ${cashierTabletItems.length}`}
-            </div>
-            <div className="cashierTabletToolbarActions">
-              {cashierTabletReorderMode ? (
-                <>
-                  <button className="secondary" onClick={cancelCashierTabletReorder} disabled={cashierTabletSaving}>
-                    Отмена
-                  </button>
-                  <button className="primary" onClick={saveCashierTabletOrder} disabled={cashierTabletSaving}>
-                    {cashierTabletSaving ? 'Сохраняем...' : 'Сохранить порядок'}
-                  </button>
-                </>
-              ) : (
-                <button className="secondary" onClick={startCashierTabletReorder} disabled={cashierTabletItems.length < 2 || cashierTabletLoading}>
-                  Изменить порядок
-                </button>
-              )}
-            </div>
-          </div>
-
           {cashierTabletMessage && <div className="notice">{cashierTabletMessage}</div>}
           {error && <div className="error">{error}</div>}
 
@@ -5005,6 +4997,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               const productId = toSafeInt(tabletItem.product_id, 0)
               const isAvailable = Boolean(tabletItem.is_available && tabletItem.product)
               const title = tabletItem.name || tabletItem.fallback?.product_name || `Товар ${productId}`
+              const photoUrl = tabletItem.photo_url || tabletItem.fallback?.product_photo_url || tabletItem.product?.preview || tabletItem.product?.photo_url || ''
               const index = cashierTabletOrderDraft.indexOf(productId)
 
               return (
@@ -5012,6 +5005,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   key={productId || tabletItem.id}
                   className={[
                     'cashierTabletCard',
+                    photoUrl ? 'hasPhoto' : '',
                     isAvailable ? '' : 'disabled',
                     cashierTabletReorderMode ? 'reorderMode' : '',
                   ].filter(Boolean).join(' ')}
@@ -5019,29 +5013,39 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   tabIndex={isAvailable && !cashierTabletReorderMode ? 0 : -1}
                   onClick={() => addCashierTabletItemToOrder(tabletItem)}
                 >
-                  <div className="cashierTabletCardName">{title}</div>
-                  <div className="cashierTabletCardMeta">
-                    ID {productId}{tabletItem.code ? ` · ${tabletItem.code}` : ''}
-                  </div>
-                  {!isAvailable && <div className="cashierTabletUnavailable">Недоступно</div>}
-
-                  {cashierTabletReorderMode ? (
-                    <div className="cashierTabletCardControls">
-                      <button type="button" className="secondary" onClick={(e) => { e.stopPropagation(); moveCashierTabletItem(productId, -1) }} disabled={index <= 0}>
-                        ←
-                      </button>
-                      <button type="button" className="secondary" onClick={(e) => { e.stopPropagation(); moveCashierTabletItem(productId, 1) }} disabled={index < 0 || index >= cashierTabletOrderDraft.length - 1}>
-                        →
-                      </button>
-                      <button type="button" className="secondary dangerLight" onClick={(e) => { e.stopPropagation(); void deleteItemFromCashierTablet(tabletItem) }} disabled={cashierTabletSaving}>
-                        Убрать
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="cashierTabletCardHint">
-                      {isAvailable ? 'Добавить в заказ' : 'Нет в доступных товарах ТВТ'}
+                  {photoUrl && (
+                    <div className="cashierTabletCardPhotoWrap">
+                      <img className="cashierTabletCardPhoto" src={photoUrl} alt="" loading="lazy" />
                     </div>
                   )}
+
+                  <div className="cashierTabletCardBody">
+                    <div className="cashierTabletCardName">{title}</div>
+                    <div className="cashierTabletCardMeta">
+                      ID {productId}{tabletItem.code ? ` · ${tabletItem.code}` : ''}
+                    </div>
+                    {!isAvailable && <div className="cashierTabletUnavailable">Недоступно</div>}
+
+                    {cashierTabletReorderMode ? (
+                      <div className="cashierTabletCardControls">
+                        <button type="button" className="secondary" onClick={(e) => { e.stopPropagation(); moveCashierTabletItem(productId, -1) }} disabled={index <= 0}>
+                          ←
+                        </button>
+                        <button type="button" className="secondary" onClick={(e) => { e.stopPropagation(); moveCashierTabletItem(productId, 1) }} disabled={index < 0 || index >= cashierTabletOrderDraft.length - 1}>
+                          →
+                        </button>
+                        <button type="button" className="secondary dangerLight" onClick={(e) => { e.stopPropagation(); void deleteItemFromCashierTablet(tabletItem) }} disabled={cashierTabletSaving}>
+                          Убрать
+                        </button>
+                      </div>
+                    ) : (
+                      !isAvailable && (
+                        <div className="cashierTabletCardHint">
+                          Нет в доступных товарах ТВТ
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               )
             })}

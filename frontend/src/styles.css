@@ -4270,3 +4270,175 @@ body[data-screen-profile="tablet_10"] .cashierTabletCardControls button {
 }
 /* END POS cashier tablet dialog */
 
+/* POS cashier tablet card photos */
+.cashierTabletGrid {
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  grid-auto-rows: minmax(335px, auto);
+  gap: 14px;
+}
+
+.cashierTabletCard {
+  min-height: 335px;
+  aspect-ratio: auto;
+  padding: 0 !important;
+  overflow: hidden;
+  position: relative;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+}
+
+/* Фото прижато к верху и идет в края карточки */
+.cashierTabletCardPhotoWrap {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  height: auto !important;
+  margin: 0 !important;
+  border-radius: 14px 14px 0 0;
+  overflow: hidden;
+  background: #ffffff;
+  border: 0 !important;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  flex: 0 0 auto;
+}
+
+.cashierTabletCard.hasPhoto .cashierTabletCardPhotoWrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.cashierTabletCardPhoto {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+
+/* Текстовый блок закреплен по нижнему краю карточки */
+.cashierTabletCardBody {
+  width: 100%;
+  margin-top: auto;
+  padding: 12px 14px 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #eef8ef;
+}
+
+.cashierTabletCard.hasPhoto .cashierTabletCardBody {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 118px;
+  margin-top: 0;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(238, 248, 239, 0.36) 0%,
+      rgba(238, 248, 239, 0.72) 30%,
+      rgba(238, 248, 239, 0.94) 64%,
+      #eef8ef 100%
+    );
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.cashierTabletCardName {
+  margin: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1.12;
+  text-align: center;
+  width: 100%;
+}
+
+.cashierTabletCardMeta {
+  padding-top: 7px;
+  padding-bottom: 0;
+  text-align: center;
+  width: 100%;
+}
+
+.cashierTabletUnavailable {
+  align-self: center;
+  margin-top: 7px;
+}
+
+.cashierTabletCardHint {
+  padding-top: 7px;
+  text-align: center;
+  width: 100%;
+}
+
+.cashierTabletCardControls {
+  width: 100%;
+  padding-top: 9px;
+  margin-top: auto;
+}
+
+body[data-screen-profile="tablet_10"] .cashierTabletGrid {
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  grid-auto-rows: minmax(300px, auto);
+  gap: 11px;
+}
+
+body[data-screen-profile="tablet_10"] .cashierTabletCard {
+  min-height: 300px;
+}
+
+body[data-screen-profile="tablet_10"] .cashierTabletCardPhotoWrap {
+  border-radius: 12px 12px 0 0;
+}
+
+body[data-screen-profile="tablet_10"] .cashierTabletCard.hasPhoto .cashierTabletCardBody {
+  min-height: 108px;
+}
+
+body[data-screen-profile="tablet_10"] .cashierTabletCardName {
+  min-height: 52px;
+  font-size: 16px;
+}
+
+body[data-screen-profile="tablet_10"] .cashierTabletCardMeta {
+  padding-top: 6px;
+}
+
+@media (max-width: 760px) {
+  .cashierTabletGrid {
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+    grid-auto-rows: minmax(260px, auto);
+    gap: 9px;
+  }
+
+  .cashierTabletCard {
+    min-height: 260px;
+  }
+
+  .cashierTabletCardPhotoWrap {
+    border-radius: 12px 12px 0 0;
+  }
+
+  .cashierTabletCard.hasPhoto .cashierTabletCardBody {
+    min-height: 102px;
+    padding: 10px 10px 11px;
+  }
+
+  .cashierTabletCardName {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .cashierTabletCardMeta {
+    padding-top: 5px;
+  }
+}
+/* END POS cashier tablet card photos */
+
