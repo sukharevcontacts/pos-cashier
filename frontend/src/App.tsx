@@ -2574,13 +2574,13 @@ function App() {
     if (stockLoading || !stockSelectedItem) return
 
     const current = Number(stockForm.qty_delta || 0)
-    const step = stockSelectedItem.isfractional ? 0.001 : 1
+    const step = stockSelectedItem.isfractional ? 0.1 : 1
     const next = Math.max(0, current + delta * step)
     const nextValue = stockSelectedItem.isfractional
-      ? next.toFixed(3)
+      ? Number(next.toFixed(3)).toString()
       : String(Math.round(next))
 
-    setStockQtyDraft(nextValue)
+    setStockQtyDraft(nextValue === '0' ? '' : nextValue)
   }
 
   function changeStockSelectedItem() {
@@ -4459,15 +4459,15 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
     if (!qtyDialogLine) return
 
     const current = Number(qtyDraft || 0)
-    const step = qtyDialogLine.isfractional ? 0.001 : 1
+    const step = qtyDialogLine.isfractional ? 0.1 : 1
     const next = Math.max(0, current + delta * step)
 
     const nextValue = qtyDialogLine.isfractional
-      ? next.toFixed(3)
+      ? Number(next.toFixed(3)).toString()
       : String(Math.round(next))
 
-    setQtyDraft(nextValue)
-    setQtyCaretIndex(nextValue.length)
+    setQtyDraft(nextValue === '0' ? '' : nextValue)
+    setQtyCaretIndex((nextValue === '0' ? '' : nextValue).length)
   }
 
   function normalizeQtyValue(value: string) {
