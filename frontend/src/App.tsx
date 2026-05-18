@@ -70,11 +70,14 @@ function isOrderCancelable(order: FoundOrder) {
 
 type FoundUser = {
   user_id?: number | null
-  user_account: number
+  user_account: number | string
   user_phone: string | null
   user_name: string | null
   user_fam: string | null
   user_otch: string | null
+  address?: string | null
+  email?: string | null
+  date_of_birth?: string | null
   balance: number
   photo_url: string | null
 }
@@ -248,7 +251,7 @@ type OrderDetailsResponse = {
   readonly: boolean
   order: {
     order_number: number
-    user_account: number
+    user_account: number | string
     store_id: number
     status: string
     status_label: string
@@ -280,7 +283,7 @@ type OrderReceiptResponse = {
   }
   order: {
     order_number: number
-    user_account: number
+    user_account: number | string
     store_id: number
     status: string
     status_label: string
@@ -2397,6 +2400,61 @@ function App() {
     }
   }
 
+  function resetShareholderForm() {
+    setNewUserForm({
+      user_fam: '',
+      user_name: '',
+      user_otch: '',
+      date_of_birth: '',
+      address: '',
+      email: '',
+      user_phone: '',
+    })
+  }
+
+  function getShareholderFormName() {
+    return [newUserForm.user_fam, newUserForm.user_name, newUserForm.user_otch]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+  }
+
+  function normalizeShareholderPhone(value: string) {
+    const digits = String(value || '').replace(/\D/g, '')
+
+    if (digits.length === 11 && digits.startsWith('8')) {
+      return `7${digits.slice(1)}`
+    }
+
+    return digits
+  }
+
+  function openShareholderForm() {
+    setError('')
+
+    if (foundUser) {
+      setNewUserForm({
+        user_fam: foundUser.user_fam || '',
+        user_name: foundUser.user_name || '',
+        user_otch: foundUser.user_otch || '',
+        date_of_birth: foundUser.date_of_birth || '',
+        address: foundUser.address || '',
+        email: foundUser.email || '',
+        user_phone: foundUser.user_phone || '',
+      })
+    } else {
+      resetShareholderForm()
+    }
+
+    setNewUserDialogOpen(true)
+  }
+
+  function closeShareholderForm() {
+    setNewUserDialogOpen(false)
+    setError('')
+  }
+
   function updateNewUserField(field: keyof typeof newUserForm, value: string) {
     setNewUserForm((prev) => ({
       ...prev,
@@ -2404,11 +2462,43 @@ function App() {
     }))
   }
 
-  async function createShareholder() {
+  async function saveShareholderForm() {
     if (!cashier || !selectedStore) return
 
-    if (!newUserForm.user_phone.trim()) {
+    const name = getShareholderFormName()
+    const phone = normalizeShareholderPhone(newUserForm.user_phone)
+    const birthdate = newUserForm.date_of_birth.trim()
+    const email = newUserForm.email.trim()
+    const address = newUserForm.address.trim()
+    const isProfileUpdate = Boolean(foundUser)
+
+    if (!name) {
+      setError('Введите ФИО пайщика')
+      return
+    }
+
+    if (!phone) {
       setError('Введите телефон пайщика')
+      return
+    }
+
+    if (!birthdate) {
+      setError('Введите дату рождения пайщика')
+      return
+    }
+
+    if (!email) {
+      setError('Введите e-mail пайщика')
+      return
+    }
+
+    if (!address) {
+      setError('Введите адрес пайщика')
+      return
+    }
+
+    if (isProfileUpdate && !foundUser?.user_id) {
+      setError('Не удалось сохранить анкету: в данных пайщика нет user_id')
       return
     }
 
@@ -2416,53 +2506,62 @@ function App() {
     setError('')
 
     try {
-      const res = await apiFetch(`${API_BASE}/cashier/users/create`, {
+      const params = new URLSearchParams({
+        name,
+        birthdate,
+        phone,
+        email,
+        address,
+        store_id: String(selectedStore.store_id),
+      })
+
+      if (isProfileUpdate && foundUser?.user_id) {
+        params.set('user_id', String(foundUser.user_id))
+      }
+
+      const endpoint = isProfileUpdate ? '/cashier/profile' : '/cashier/register'
+      const res = await apiFetch(`${API_BASE}${endpoint}?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashier_account: cashier.cashier_account,
-          store_id: selectedStore.store_id,
-          user_phone: newUserForm.user_phone,
-          user_fam: newUserForm.user_fam,
-          user_name: newUserForm.user_name,
-          user_otch: newUserForm.user_otch,
-          date_of_birth: newUserForm.date_of_birth || null,
-          address: newUserForm.address,
-          email: newUserForm.email,
-          device_id: 'web',
-        }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || 'Не удалось создать пайщика')
+        throw new Error(getErrorMessage(data, isProfileUpdate ? 'Не удалось сохранить анкету' : 'Не удалось зарегистрировать пайщика'))
       }
 
       const data = await res.json()
 
-      setFoundUser(data.user)
-      await fetchStatus()
-      setOrders([])
-      setStoreState(data.store)
-      setSelectedOrderNumber(null)
-      setSearchQuery(String(data.user.user_account))
-      setNewUserDialogOpen(false)
+      if (isProfileUpdate) {
+        setFoundUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                user_name: data?.user?.name ?? name,
+                user_phone: data?.user?.phone ?? phone,
+                email: data?.user?.email ?? email,
+                address: data?.user?.address ?? address,
+                date_of_birth: data?.user?.birthdate ?? birthdate,
+              }
+            : prev
+        )
+      } else {
+        const createdUser = data.user as FoundUser
+        setFoundUser(createdUser)
+        setOrders([])
+        setSelectedOrderNumber(null)
+        setOrderDetails(null)
+        setSearchQuery(String(createdUser.user_account || ''))
+      }
 
-      setNewUserForm({
-        user_fam: '',
-        user_name: '',
-        user_otch: '',
-        date_of_birth: '',
-        address: '',
-        email: '',
-        user_phone: '',
-      })
+      setNewUserDialogOpen(false)
+      resetShareholderForm()
     } catch (e: any) {
-      setError(e.message || 'Ошибка создания пайщика')
+      setError(e.message || (foundUser ? 'Ошибка сохранения анкеты' : 'Ошибка регистрации пайщика'))
     } finally {
       setNewUserLoading(false)
     }
   }
+
 
   function updateStockField(field: keyof typeof stockForm, value: string) {
     setStockForm((prev) => ({
@@ -6396,8 +6495,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
             <button className="secondary" onClick={openStockReceiptScreen}>
               Приход
             </button>
-            <button className="secondary" onClick={() => setNewUserDialogOpen(true)}>
-              Анкета
+            <button className="secondary" onClick={openShareholderForm}>
+              {foundUser ? 'Анкета' : 'Регистрация'}
             </button>
             <button className="secondary" onClick={switchStore}>
               Сменить ТВТ
@@ -7037,41 +7136,37 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
             <div className="newUserDialog">
               <div className="qtyDialogHeader">
                 <div>
-                  <h2>Анкета нового пайщика</h2>
-                  <p className="muted">После сохранения новый пайщик сразу откроется в кассе</p>
+                  <h2>{foundUser ? 'Анкета пайщика' : 'Регистрация пайщика'}</h2>
+                  <p className="muted">
+                    {foundUser ? 'Дополните или обновите данные найденного пайщика' : 'После сохранения новый пайщик сразу откроется в кассе'}
+                  </p>
                 </div>
-                <button className="secondary" onClick={() => setNewUserDialogOpen(false)}>
+                <button className="secondary" onClick={closeShareholderForm}>
                   Закрыть
                 </button>
               </div>
 
               <div className="newUserForm">
-                <label>Фамилия</label>
+                <label className="newUserFull">ФИО</label>
                 <input
-                  value={newUserForm.user_fam}
-                  onChange={(e) => updateNewUserField('user_fam', e.target.value)}
-                  placeholder="Фамилия"
-                />
-
-                <label>Имя</label>
-                <input
+                  className="newUserFull"
                   value={newUserForm.user_name}
-                  onChange={(e) => updateNewUserField('user_name', e.target.value)}
-                  placeholder="Имя"
-                />
-
-                <label>Отчество</label>
-                <input
-                  value={newUserForm.user_otch}
-                  onChange={(e) => updateNewUserField('user_otch', e.target.value)}
-                  placeholder="Отчество"
+                  onChange={(e) =>
+                    setNewUserForm((prev) => ({
+                      ...prev,
+                      user_fam: '',
+                      user_name: e.target.value,
+                      user_otch: '',
+                    }))
+                  }
+                  placeholder="Иванов Иван Иванович"
                 />
 
                 <label>Телефон</label>
                 <input
                   value={newUserForm.user_phone}
                   onChange={(e) => updateNewUserField('user_phone', e.target.value)}
-                  placeholder="79130000000"
+                  placeholder="79990000000"
                   inputMode="tel"
                 />
 
@@ -7101,11 +7196,11 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               {error && <div className="error">{error}</div>}
 
               <div className="newUserActions">
-                <button className="secondary" onClick={() => setNewUserDialogOpen(false)} disabled={newUserLoading}>
+                <button className="secondary" onClick={closeShareholderForm} disabled={newUserLoading}>
                   Отмена
                 </button>
-                <button className="primary" onClick={createShareholder} disabled={newUserLoading}>
-                  {newUserLoading ? 'Сохраняем...' : 'Сохранить'}
+                <button className="primary" onClick={saveShareholderForm} disabled={newUserLoading}>
+                  {newUserLoading ? 'Сохраняем...' : foundUser ? 'Сохранить анкету' : 'Зарегистрировать'}
                 </button>
               </div>
             </div>

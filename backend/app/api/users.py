@@ -201,7 +201,7 @@ async def fill_profile(
 
         return {
             "ok": True,
-            "profile": {
+            "user": {
                 "name": payload.get("name"),
                 "birthdate": payload.get("birthdate"),
                 "phone": payload.get("phone"),
