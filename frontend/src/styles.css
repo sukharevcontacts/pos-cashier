@@ -4891,3 +4891,208 @@ body[data-screen-profile="tablet_10"] .showReleasedToggle input {
   width: 16px;
   height: 16px;
 }
+
+/* FIX desktop order details: keep line rows normal height and scroll only the goods list */
+@media (min-width: 1101px) {
+  body:not([data-screen-profile="tablet_10"]) .orderScreen {
+    height: calc(100dvh - 76px);
+    max-height: calc(100dvh - 76px);
+    min-height: 0;
+    overflow: hidden;
+    padding: 22px;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderMain {
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderTop,
+  body:not([data-screen-profile="tablet_10"]) .error,
+  body:not([data-screen-profile="tablet_10"]) .notice,
+  body:not([data-screen-profile="tablet_10"]) .emptyOrder,
+  body:not([data-screen-profile="tablet_10"]) .quickAddRow,
+  body:not([data-screen-profile="tablet_10"]) .orderActions {
+    flex: 0 0 auto;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderMain > .linesTable {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: 8px;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderMain > .emptyOrder {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .lineHeader {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #fff;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .lineRow {
+    flex: none;
+    height: auto;
+    min-height: 54px;
+    align-self: stretch;
+    box-sizing: border-box;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .lineRow.weightLineRow {
+    min-height: 54px;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderMain > .linesTable::-webkit-scrollbar {
+    width: 7px;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderMain > .linesTable::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 999px;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .orderMain > .linesTable::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+/* END FIX desktop order details scroll */
+
+/* FIX v2 order details scroll: one robust layout for desktop, tablet and mobile.
+   The list container is a flex child and only it scrolls; rows keep normal height. */
+.orderScreen {
+  height: calc(100dvh - 76px) !important;
+  max-height: calc(100dvh - 76px) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.orderScreen > .orderMain {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.orderScreen .orderTop,
+.orderScreen .error,
+.orderScreen .notice,
+.orderScreen .emptyOrder,
+.orderScreen .quickAddRow,
+.orderScreen .orderActions {
+  flex: 0 0 auto !important;
+}
+
+.orderScreen > .orderMain > .linesTable {
+  flex: 1 1 0 !important;
+  min-height: 160px !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  display: block !important;
+  padding-right: 4px !important;
+  align-content: initial !important;
+}
+
+.orderScreen > .orderMain > .linesTable > .lineHeader {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  background: #fff !important;
+  margin-bottom: 8px !important;
+}
+
+.orderScreen > .orderMain > .linesTable > .lineRow {
+  display: grid !important;
+  width: 100% !important;
+  min-height: 58px !important;
+  height: auto !important;
+  margin-bottom: 8px !important;
+  padding: 10px 12px !important;
+  align-self: stretch !important;
+  box-sizing: border-box !important;
+  flex: none !important;
+}
+
+.orderScreen > .orderMain > .linesTable > .lineRow.weightLineRow {
+  min-height: 58px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen {
+  height: calc(100dvh - 50px) !important;
+  max-height: calc(100dvh - 50px) !important;
+  min-height: 0 !important;
+  padding: 8px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .linesTable {
+  flex: 1 1 0 !important;
+  min-height: 120px !important;
+  overflow-y: auto !important;
+  display: block !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .linesTable > .lineHeader {
+  margin-bottom: 6px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .linesTable > .lineRow {
+  min-height: 66px !important;
+  margin-bottom: 6px !important;
+  padding: 8px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .linesTable > .lineRow.weightLineRow {
+  min-height: 66px !important;
+}
+
+@media (max-width: 1100px) {
+  body[data-screen-profile="auto"] .orderScreen,
+  body:not([data-screen-profile]) .orderScreen {
+    height: calc(100dvh - 62px) !important;
+    max-height: calc(100dvh - 62px) !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body[data-screen-profile="auto"] .orderScreen > .orderMain > .linesTable,
+  body:not([data-screen-profile]) .orderScreen > .orderMain > .linesTable {
+    min-height: 120px !important;
+  }
+
+  body[data-screen-profile="auto"] .orderScreen > .orderMain > .linesTable > .lineRow,
+  body:not([data-screen-profile]) .orderScreen > .orderMain > .linesTable > .lineRow {
+    min-height: 62px !important;
+    margin-bottom: 6px !important;
+    padding: 8px !important;
+  }
+}
+/* END FIX v2 order details scroll */
