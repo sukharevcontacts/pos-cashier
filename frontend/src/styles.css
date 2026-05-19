@@ -5096,3 +5096,115 @@ body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .linesTable > 
   }
 }
 /* END FIX v2 order details scroll */
+
+/* FIX: orders list stays inside shareholder screen for all profiles */
+.cashierScreen {
+  min-height: 0;
+}
+
+.rightPanel {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.rightPanel .balanceStrip,
+.rightPanel .ordersHeader {
+  flex: 0 0 auto;
+}
+
+.rightPanel .ordersList {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  align-content: start;
+  justify-content: stretch;
+  grid-auto-rows: max-content;
+  padding-right: 4px;
+}
+
+.rightPanel .orderCard {
+  flex: 0 0 auto;
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+}
+
+.rightPanel .ordersList::-webkit-scrollbar {
+  width: 7px;
+}
+
+.rightPanel .ordersList::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 999px;
+}
+
+.rightPanel .ordersList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (min-width: 1101px) {
+  body:not([data-screen-profile="tablet_10"]) .cashierScreen {
+    height: calc(100dvh - 76px);
+    max-height: calc(100dvh - 76px);
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .leftPanel,
+  body:not([data-screen-profile="tablet_10"]) .rightPanel {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  body:not([data-screen-profile="tablet_10"]) .leftPanel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 1100px) {
+  body[data-screen-profile="auto"] .cashierScreen,
+  body:not([data-screen-profile]) .cashierScreen {
+    min-height: 0;
+    overflow: visible;
+  }
+
+  body[data-screen-profile="auto"] .rightPanel,
+  body:not([data-screen-profile]) .rightPanel {
+    max-height: calc(100dvh - 24px);
+    min-height: 320px;
+  }
+}
+
+body[data-screen-profile="tablet_10"] .cashierScreen {
+  height: calc(100dvh - 50px);
+  max-height: calc(100dvh - 50px);
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+body[data-screen-profile="tablet_10"] .leftPanel,
+body[data-screen-profile="tablet_10"] .rightPanel {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+body[data-screen-profile="tablet_10"] .leftPanel {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body[data-screen-profile="tablet_10"] .rightPanel .ordersList {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+/* END FIX shareholder orders list scroll */
