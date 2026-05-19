@@ -86,6 +86,7 @@ type FoundOrder = {
   order_number: number
   status: string
   status_label: string
+  order_date?: string | null
   delivery_date: string | null
   date_updated: string
   order_sum: number
@@ -518,6 +519,18 @@ function getOrderHasUnsavedChanges(orderDetails: OrderDetailsResponse | null) {
   return Boolean(orderDetails?.lines?.some((line) => isOrderLineUnsaved(line)))
 }
 
+function isReleasedOrderStatus(status: string | null | undefined) {
+  return String(status || '').trim().toLowerCase() === 'выполнен'
+}
+
+function sortOrdersByOrderDateDesc(orders: FoundOrder[] = []) {
+  return [...orders].sort((a, b) => {
+    const aTime = Date.parse(String(a.order_date || a.date_updated || '')) || 0
+    const bTime = Date.parse(String(b.order_date || b.date_updated || '')) || 0
+    return bTime - aTime
+  })
+}
+
 function getOrderLineRowStyle(line: OrderLine, dragLineId: number | null, animatingLineId: number | null, dragX: number, commitX: number) {
   const lineId = getOrderLineUiId(line)
   const baseStyle = isOrderLineUnsaved(line) ? { backgroundColor: '#fff7cc' } : {}
@@ -702,16 +715,18 @@ function mapParitetOrderToFrontResponse(data: any, foundUser: FoundUser, selecte
       : []
 
   const orderSum = toNumber(payload.price, lines.reduce((sum: number, line: OrderLine) => sum + toNumber(line.line_sum, 0), 0))
+  const orderStatus = String(payload.state ?? data?.order?.status ?? '')
+  const orderStatusLabel = String(payload.state ?? data?.order?.status_label ?? 'Заказ')
 
   return {
     ok: true,
-    readonly: payload.canedit === false || data?.readonly === true,
+    readonly: payload.canedit === false || data?.readonly === true || isReleasedOrderStatus(orderStatus) || isReleasedOrderStatus(orderStatusLabel),
     order: {
       order_number: toNumber(payload.number ?? payload.id ?? data?.order?.order_number, 0),
       user_account: foundUser.user_account,
       store_id: selectedStore.store_id,
-      status: String(payload.state ?? data?.order?.status ?? ''),
-      status_label: String(payload.state ?? data?.order?.status_label ?? 'Заказ'),
+      status: orderStatus,
+      status_label: orderStatusLabel,
       order_sum: orderSum,
       user_phone: foundUser.user_phone,
       user_name: foundUser.user_name,
@@ -794,6 +809,7 @@ function App() {
   const [ownerBalance, setOwnerBalance] = useState<number>(0)
   const [cashBalance, setCashBalance] = useState<number>(0)
   const [orders, setOrders] = useState<FoundOrder[]>([])
+  const [showReleasedOrders, setShowReleasedOrders] = useState(false)
   const [storeState, setStoreState] = useState<SearchResponse['store'] | null>(null)
   const [txDialogOpen, setTxDialogOpen] = useState(false)
   const [txLoading, setTxLoading] = useState(false)
@@ -2208,6 +2224,7 @@ function App() {
         cashier_account: String(cashier.cashier_account),
         store_id: String(selectedStore.store_id),
         q: searchQuery,
+        showreleased: String(showReleasedOrders),
       })
 
       const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
@@ -2221,7 +2238,7 @@ function App() {
 
       setFoundUser(data.user)
       await fetchStatus()
-      setOrders(data.orders)
+      setOrders(sortOrdersByOrderDateDesc(data.orders))
       setStoreState(data.store)
     } catch (e: any) {
       setFoundUser(null)
@@ -2233,7 +2250,7 @@ function App() {
     }
   }
 
-  async function fetchCurrentShareholderData(account: number | string) {
+  async function fetchCurrentShareholderData(account: number | string, showReleasedOverride = showReleasedOrders) {
     if (!cashier || !selectedStore) {
       throw new Error('Не выбрана точка выдачи или кассир')
     }
@@ -2242,6 +2259,7 @@ function App() {
       cashier_account: String(cashier.cashier_account ?? ''),
       store_id: String(selectedStore.store_id),
       account: String(account),
+      showreleased: String(showReleasedOverride),
     })
 
     const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
@@ -2269,7 +2287,7 @@ function App() {
         : data.user
 
     setFoundUser(nextUser)
-    setOrders(data.orders)
+    setOrders(sortOrdersByOrderDateDesc(data.orders))
     setStoreState(data.store)
 
     if (keepSelectedOrderNumber !== undefined) {
@@ -2289,12 +2307,15 @@ function App() {
 
   async function refreshCurrentUser(
     keepSelectedOrderNumber?: number | null,
-    options: { updateCashierStatus?: boolean; preserveUserBalance?: number | null } = {}
+    options: { updateCashierStatus?: boolean; preserveUserBalance?: number | null; showReleasedOverride?: boolean } = {}
   ) {
     if (!cashier || !selectedStore || !foundUser) return
 
     try {
-      const data = await fetchCurrentShareholderData(foundUser.user_account)
+      const data = await fetchCurrentShareholderData(
+        foundUser.user_account,
+        options.showReleasedOverride ?? showReleasedOrders
+      )
       const appliedData = applySearchResponse(data, keepSelectedOrderNumber, {
         preserveUserBalance: options.preserveUserBalance,
       })
@@ -2371,6 +2392,17 @@ function App() {
     lastOrderBalanceRefreshTapAtRef.current = now
   }
 
+  function handleShowReleasedOrdersChange(next: boolean) {
+    setShowReleasedOrders(next)
+
+    if (foundUser && selectedStore && cashier) {
+      void refreshCurrentUser(selectedOrderNumber, {
+        updateCashierStatus: false,
+        showReleasedOverride: next,
+      })
+    }
+  }
+
 
   async function searchOrders(keepSelectedOrderNumber?: number | null) {
     if (!cashier || !selectedStore || !foundUser) return
@@ -2379,6 +2411,7 @@ function App() {
       cashier_account: String(cashier.cashier_account),
       store_id: String(selectedStore.store_id),
       q: String(foundUser.user_account),
+      showreleased: String(showReleasedOrders),
     })
 
     const res = await apiFetch(`${API_BASE}/cashier/search?${params.toString()}`)
@@ -2391,7 +2424,7 @@ function App() {
     const data: SearchResponse = await res.json()
 
     setFoundUser(data.user)
-    setOrders(data.orders)
+    setOrders(sortOrdersByOrderDateDesc(data.orders))
     setStoreState(data.store)
 
     if (keepSelectedOrderNumber) {
@@ -3465,12 +3498,12 @@ function App() {
     if (!isOrderCancelable(order) || cancelOrderLoading) return
 
     orderSwipeRef.current = {
-      orderNumber: order.order_number,
+      orderNumber: Number(order.order_number),
       startX: e.clientX,
       startY: e.clientY,
     }
 
-    setOrderSwipeDragNumber(order.order_number)
+    setOrderSwipeDragNumber(Number(order.order_number))
     setOrderSwipeDragX(0)
 
     try {
@@ -3483,7 +3516,7 @@ function App() {
   function handleOrderPointerMove(e: any, order: FoundOrder) {
     const swipe = orderSwipeRef.current
 
-    if (!swipe || swipe.orderNumber !== order.order_number) {
+    if (!swipe || swipe.orderNumber !== Number(order.order_number)) {
       return
     }
 
@@ -3509,7 +3542,7 @@ function App() {
   function handleOrderPointerUp(e: any, order: FoundOrder) {
     const swipe = orderSwipeRef.current
 
-    if (!swipe || swipe.orderNumber !== order.order_number) {
+    if (!swipe || swipe.orderNumber !== Number(order.order_number)) {
       setOrderSwipeDragNumber(null)
       setOrderSwipeDragX(0)
       orderSwipeRef.current = null
@@ -3530,7 +3563,7 @@ function App() {
     if (Math.abs(deltaX) > 95 && Math.abs(deltaY) < 65) {
       e.preventDefault()
       e.stopPropagation()
-      swipedOrderNumberRef.current = order.order_number
+      swipedOrderNumberRef.current = Number(order.order_number)
       setOrderSwipeDragNumber(null)
       setOrderSwipeDragX(0)
       setDeleteOrderDialog(order)
@@ -3548,12 +3581,12 @@ function App() {
   }
 
   function handleOrderCardClick(order: FoundOrder) {
-    if (swipedOrderNumberRef.current === order.order_number) {
+    if (swipedOrderNumberRef.current === Number(order.order_number)) {
       swipedOrderNumberRef.current = null
       return
     }
 
-    openOrder(order.order_number)
+    openOrder(Number(order.order_number))
   }
 
   async function cancelOrder(orderNumber: number) {
@@ -5261,7 +5294,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
         const newBalance = Number(data.user.balance || 0)
 
         setFoundUser(data.user)
-        setOrders(data.orders)
+        setOrders(sortOrdersByOrderDateDesc(data.orders))
         setStoreState(data.store)
 
         if (newBalance > Number(cashQrDialog.old_balance || 0)) {
@@ -7783,13 +7816,24 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
             <div className="ordersHeader">
               <div>
                 <h2>Заказы пайщика</h2>
-                <button
-                  className="primary smallButton"
-                  onClick={createOrder}
-                  disabled={!foundUser || searchLoading}
-                >
-                  Создать заказ
-                </button>
+                <div className="ordersHeaderControls">
+                  <button
+                    className="primary smallButton"
+                    onClick={createOrder}
+                    disabled={!foundUser || searchLoading}
+                  >
+                    Создать заказ
+                  </button>
+                  <label className="showReleasedToggle">
+                    <input
+                      type="checkbox"
+                      checked={showReleasedOrders}
+                      onChange={(e) => handleShowReleasedOrdersChange(e.target.checked)}
+                      disabled={!foundUser || searchLoading}
+                    />
+                    <span>Показать все</span>
+                  </label>
+                </div>
               </div>
               <div className="totalBox">
                 Итого: <b>{formatMoney(total)}</b>
@@ -7801,15 +7845,15 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                 <div className="emptyBox">Заказы не найдены</div>
               )}
 
-              {orders.map((order) => (
+              {sortOrdersByOrderDateDesc(orders).map((order) => (
                 <div
                   key={order.order_number}
                   className={[
-                    order.order_number === selectedOrderNumber ? 'orderCard selected' : 'orderCard',
+                    Number(order.order_number) === Number(selectedOrderNumber) ? 'orderCard selected' : 'orderCard',
                     isOrderCancelable(order) ? 'orderCardSwipeable' : '',
-                    orderSwipeDragNumber === order.order_number ? 'orderCardSwiping' : '',
+                    orderSwipeDragNumber === Number(order.order_number) ? 'orderCardSwiping' : '',
                   ].filter(Boolean).join(' ')}
-                  style={getOrderCardSwipeStyle(order.order_number, orderSwipeDragNumber, orderSwipeDragX)}
+                  style={getOrderCardSwipeStyle(Number(order.order_number), orderSwipeDragNumber, orderSwipeDragX)}
                   onPointerDown={(e) => handleOrderPointerDown(e, order)}
                   onPointerMove={(e) => handleOrderPointerMove(e, order)}
                   onPointerUp={(e) => handleOrderPointerUp(e, order)}
