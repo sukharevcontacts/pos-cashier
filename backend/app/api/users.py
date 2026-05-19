@@ -20,6 +20,7 @@ async def search_shareholder(
     account: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
     x_session_id: str = Header(...),
+    showreleased: bool = Query(False),
     store_id_header: Optional[int] = Header(None, alias="store_id"),
     store_id_query: Optional[int] = Query(None, alias="store_id"),
 ):
@@ -67,7 +68,8 @@ async def search_shareholder(
         orders = await paritet_find_orders(
             token=session.token,
             tvt_id=store_id,
-            user_id=user_id
+            user_id=user_id,
+            showreleased=showreleased,
         )
 
         # 6. маппинг заказов под старый формат
