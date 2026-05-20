@@ -795,6 +795,8 @@ function App() {
   const [appUpdateAvailable, setAppUpdateAvailable] = useState(false)
   const [latestAppVersion, setLatestAppVersion] = useState('')
   const [appUpdateMessage, setAppUpdateMessage] = useState('')
+  const [appUpdatePromptOpen, setAppUpdatePromptOpen] = useState(false)
+  const appUpdatePromptDismissedRef = useRef(false)
   const [mainKeypadTarget, setMainKeypadTarget] = useState<MainKeypadTarget>(null)
   const lastTopbarTapAt = useRef(0)
 
@@ -1233,7 +1235,7 @@ function App() {
     return version
   }
 
-  async function checkForAppUpdates(manual = false) {
+  async function checkForAppUpdates(manual = false, showPrompt = false) {
     if (typeof window === 'undefined') return
 
     setAppUpdateChecking(true)
@@ -1274,8 +1276,13 @@ function App() {
       if (remoteVersion && remoteVersion !== APP_VERSION) {
         setAppUpdateAvailable(true)
         setAppUpdateMessage('Есть обновление приложения')
+
+        if (showPrompt && !appUpdatePromptDismissedRef.current) {
+          setAppUpdatePromptOpen(true)
+        }
       } else {
         setAppUpdateAvailable(false)
+        setAppUpdatePromptOpen(false)
         if (manual) setAppUpdateMessage('Установлена актуальная версия')
       }
     } catch (e: any) {
@@ -1319,7 +1326,7 @@ function App() {
     void checkForAppUpdates(false)
 
     const timer = window.setInterval(() => {
-      void checkForAppUpdates(false)
+      void checkForAppUpdates(false, true)
     }, 120000)
 
     return () => {
@@ -1937,6 +1944,58 @@ function App() {
           <button type="button" className="primary full" onClick={() => setAppExitNoticeOpen(false)}>
             Понятно
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  function renderAppUpdatePrompt() {
+    if (!cashier || !appUpdateAvailable || !appUpdatePromptOpen) return null
+
+    return (
+      <div className="appExitOverlay appUpdatePromptOverlay" role="presentation">
+        <div
+          className="appExitDialog appUpdatePromptDialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="app-update-prompt-title"
+        >
+          <div className="appExitDialogIcon appUpdatePromptIcon" aria-hidden="true">
+            ↻
+          </div>
+
+          <div>
+            <h2 id="app-update-prompt-title">Есть обновление приложения</h2>
+            <p>
+              Доступна новая версия кассового приложения. Чтобы применить изменения, обновите приложение.
+            </p>
+          </div>
+
+          <div className="appUpdatePromptActions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                setAppUpdatePromptOpen(false)
+                void refreshApplication()
+              }}
+              disabled={appUpdateChecking}
+            >
+              Обновить приложение
+            </button>
+
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                appUpdatePromptDismissedRef.current = true
+                setAppUpdatePromptOpen(false)
+              }}
+              disabled={appUpdateChecking}
+            >
+              Позже
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -5502,6 +5561,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
         {renderAppExitNotice()}
 
+        {renderAppUpdatePrompt()}
+
         <main className="stockReceiptScreen">
           <section className="stockReceiptMain">
             <div className="stockReceiptTop">
@@ -5815,6 +5876,10 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
         {renderAppExitNotice()}
 
+        {renderAppUpdatePrompt()}
+
+        {renderMainKeypad()}
+
         {renderCashierTabletDialog()}
 
         <main className="orderScreen">
@@ -5931,7 +5996,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               </div>
             )}
 
-            <div className="quickAddRow" ref={quickAddRowRef} style={{ position: 'relative' }}>
+            <div className="orderBottomDock">
+              <div className="quickAddRow" ref={quickAddRowRef} style={{ position: 'relative' }}>
               <label>Товар</label>
               <input
                 value={quickItemCode}
@@ -6060,7 +6126,6 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               </button>
               <div className="orderTopupBox">
                 <label className="orderTopupAmount">
-                  <span>Пополнение П/С</span>
                   <input
                     ref={cashTopupInputRef}
                     value={cashTopupAmount}
@@ -6110,6 +6175,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   {sbpLoading || cashQrLoading ? 'QR...' : 'СБП'}
                 </button>
               </div>
+            </div>
             </div>
 
             {orderPaymentQrDialog && (
@@ -6595,6 +6661,8 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
         {renderSideMenu()}
 
         {renderAppExitNotice()}
+
+        {renderAppUpdatePrompt()}
 
         {renderMainKeypad()}
 

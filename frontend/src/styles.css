@@ -5307,3 +5307,178 @@ body[data-screen-profile="tablet_10"] .orderTopupButton {
   }
 }
 /* END ORDER EDIT: inline topup controls in bottom action panel */
+
+/* APP UPDATE PROMPT */
+.appUpdatePromptDialog {
+  width: min(480px, 100%);
+}
+
+.appUpdatePromptActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.appUpdatePromptActions button {
+  min-height: 48px;
+}
+
+body[data-screen-profile="tablet_10"] .appUpdatePromptDialog {
+  width: min(430px, 100%);
+}
+
+body[data-screen-profile="tablet_10"] .appUpdatePromptActions {
+  gap: 10px;
+}
+/* END APP UPDATE PROMPT */
+
+
+
+/* FIX order bottom dock pinned */
+/* Нижняя рабочая зона экрана редактирования заказа прижата вниз.
+   Список строк, строки заказа и скролл не меняем. */
+.orderScreen > .orderMain > .orderBottomDock {
+  flex: 0 0 auto !important;
+  margin-top: auto !important;
+  min-height: 0 !important;
+  position: relative !important;
+  z-index: 40 !important;
+}
+
+.orderScreen > .orderMain > .orderBottomDock > .quickAddRow,
+.orderScreen > .orderMain > .orderBottomDock > .orderActions {
+  flex: 0 0 auto !important;
+}
+
+.orderScreen > .orderMain > .orderBottomDock > .quickAddRow {
+  margin-top: 12px !important;
+}
+
+.orderScreen > .orderMain > .orderBottomDock > .orderActions {
+  margin-top: 12px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .quickAddRow,
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions {
+  margin-top: 8px !important;
+}
+/* END FIX order bottom dock pinned */
+
+/* FIX order edit empty area and one-line action panel */
+
+/* Пустой заказ должен закрашивать всю свободную область до нижней панели. */
+.orderScreen > .orderMain > .emptyOrder {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Нижняя зона остается внизу, но не создает большой белый провал. */
+.orderScreen > .orderMain > .orderBottomDock {
+  flex: 0 0 auto !important;
+  margin-top: 8px !important;
+  min-height: 0 !important;
+  position: relative !important;
+  z-index: 40 !important;
+}
+
+/* Строку поиска товара не меняем по поведению, только фиксируем ее как часть нижней зоны. */
+.orderScreen > .orderMain > .orderBottomDock > .quickAddRow {
+  flex: 0 0 auto !important;
+  margin-top: 0 !important;
+}
+
+/* Все кнопки + пополнение — в один ряд. */
+.orderScreen > .orderMain > .orderBottomDock > .orderActions {
+  flex: 0 0 auto !important;
+  margin-top: 8px !important;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(92px, 1fr)) minmax(230px, 1.35fr) !important;
+  gap: 6px !important;
+  align-items: stretch !important;
+}
+
+.orderScreen > .orderMain > .orderBottomDock > .orderActions > button {
+  min-width: 0 !important;
+  min-height: 46px !important;
+  padding: 8px 10px !important;
+  font-size: 14px !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+}
+
+/* Блок пополнения справа, без подписи Пополнение П/С. */
+.orderScreen .orderTopupBox {
+  display: grid !important;
+  grid-template-columns: minmax(74px, 1fr) 78px 54px !important;
+  gap: 6px !important;
+  align-items: stretch !important;
+  min-width: 0 !important;
+}
+
+.orderScreen .orderTopupAmount {
+  display: block !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+}
+
+.orderScreen .orderTopupAmount span {
+  display: none !important;
+}
+
+.orderScreen .orderTopupAmount input {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 46px !important;
+  box-sizing: border-box !important;
+  padding: 8px 9px !important;
+  font-size: 17px !important;
+}
+
+.orderScreen .orderTopupButton {
+  min-width: 0 !important;
+  min-height: 46px !important;
+  padding: 8px 7px !important;
+  font-size: 13px !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock {
+  margin-top: 6px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions {
+  margin-top: 6px !important;
+  grid-template-columns: repeat(5, minmax(62px, 0.75fr)) minmax(188px, 1.35fr) !important;
+  gap: 5px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions > button {
+  min-height: 42px !important;
+  padding: 7px 6px !important;
+  font-size: 12px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTopupBox {
+  grid-template-columns: minmax(58px, 1fr) 68px 48px !important;
+  gap: 5px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTopupAmount input {
+  height: 42px !important;
+  padding: 7px 7px !important;
+  font-size: 15px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTopupButton {
+  min-height: 42px !important;
+  padding: 7px 5px !important;
+  font-size: 11px !important;
+}
+/* END FIX order edit empty area and one-line action panel */
