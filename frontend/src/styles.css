@@ -5482,3 +5482,347 @@ body[data-screen-profile="tablet_10"] .orderScreen .orderTopupButton {
   font-size: 11px !important;
 }
 /* END FIX order edit empty area and one-line action panel */
+
+/* ORDER HEADER COLLAPSE */
+.orderScreen .orderTop {
+  position: relative !important;
+  padding-left: 42px !important;
+}
+
+.orderHeaderToggleButton {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(46, 125, 50, 0.35);
+  border-radius: 999px;
+  background: #eef7ee;
+  color: #2e7d32;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  z-index: 5;
+}
+
+.orderHeaderToggleButton:active {
+  transform: scale(0.96);
+}
+
+.orderScreen .orderTop.orderTopCollapsed {
+  min-height: 34px !important;
+  padding-top: 6px !important;
+  padding-right: 8px !important;
+  padding-bottom: 6px !important;
+  padding-left: 42px !important;
+  margin-bottom: 6px !important;
+  border-bottom: 0 !important;
+  border-radius: 12px !important;
+  background: #f5f5f5 !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed > :not(.orderHeaderToggleButton):not(.orderHeaderCollapsedSummary) {
+  display: none !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderToggleButton {
+  top: 6px;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop {
+  padding-left: 36px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderToggleButton {
+  left: 6px;
+  top: 6px;
+  width: 26px;
+  height: 26px;
+  font-size: 17px;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop.orderTopCollapsed {
+  min-height: 30px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  padding-left: 36px !important;
+  margin-bottom: 4px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop.orderTopCollapsed .orderHeaderToggleButton {
+  top: 4px;
+}
+/* END ORDER HEADER COLLAPSE */
+
+/* ORDER HEADER COLLAPSED SUMMARY */
+.orderHeaderCollapsedSummary {
+  display: none;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedSummary {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.orderHeaderCollapsedPerson {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.orderHeaderCollapsedPerson b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #111;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.orderHeaderCollapsedPerson span {
+  flex: 0 0 auto;
+  color: #555;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.orderHeaderCollapsedTotal {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.orderHeaderCollapsedTotal span {
+  color: #555;
+  font-size: 13px;
+}
+
+.orderHeaderCollapsedTotal b {
+  color: #111;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedSummary {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderCollapsedPerson {
+  gap: 8px;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderCollapsedPerson b {
+  font-size: 13px;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderCollapsedPerson span {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderCollapsedTotal {
+  gap: 7px;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderCollapsedTotal span {
+  font-size: 12px;
+}
+
+body[data-screen-profile="tablet_10"] .orderHeaderCollapsedTotal b {
+  font-size: 16px;
+}
+/* END ORDER HEADER COLLAPSED SUMMARY */
+
+/* FIX ORDER COLLAPSED SUMMARY WIDTH */
+/* В свернутой шапке заказа не сокращаем ФИО, а сумму заказа уводим к правому краю. */
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedSummary {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  max-width: none !important;
+  display: grid !important;
+  grid-template-columns: max-content 1fr max-content !important;
+  align-items: center !important;
+  gap: 14px !important;
+  padding-right: 10px !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedPerson {
+  grid-column: 1 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 14px !important;
+  overflow: visible !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedPerson b {
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedPerson span {
+  white-space: nowrap !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedTotal {
+  grid-column: 3 !important;
+  justify-self: end !important;
+  margin-left: auto !important;
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 10px !important;
+  white-space: nowrap !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedSummary {
+  gap: 10px !important;
+  padding-right: 8px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedPerson {
+  gap: 10px !important;
+}
+/* END FIX ORDER COLLAPSED SUMMARY WIDTH */
+
+/* FIX ORDER COLLAPSED TOTAL TO RIGHT EDGE */
+/* .orderTop является grid-контейнером, поэтому краткую строку
+   в свернутом виде нужно растянуть на все колонки. */
+.orderScreen .orderTop.orderTopCollapsed {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedSummary {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: max-content 1fr max-content !important;
+  align-items: center !important;
+  column-gap: 14px !important;
+  padding-right: 10px !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedPerson {
+  grid-column: 1 !important;
+  justify-self: start !important;
+  max-width: none !important;
+  overflow: visible !important;
+}
+
+.orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedTotal {
+  grid-column: 3 !important;
+  justify-self: end !important;
+  margin-left: 0 !important;
+  padding-left: 20px !important;
+}
+
+body[data-screen-profile="tablet_10"] .orderScreen .orderTop.orderTopCollapsed .orderHeaderCollapsedSummary {
+  column-gap: 10px !important;
+  padding-right: 8px !important;
+}
+/* END FIX ORDER COLLAPSED TOTAL TO RIGHT EDGE */
+
+/* FIX ORDER ACTIONS ONE ROW ON SMALL TABLET */
+/* На телефоне в режиме tablet_10 нижняя панель заказа должна оставаться в одну строку. */
+@media (max-width: 900px) {
+  body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions {
+    display: grid !important;
+    grid-template-columns:
+      minmax(58px, 0.55fr)
+      minmax(72px, 0.65fr)
+      minmax(76px, 0.68fr)
+      minmax(72px, 0.65fr)
+      minmax(56px, 0.5fr)
+      minmax(220px, 1.85fr) !important;
+    gap: 5px !important;
+    align-items: stretch !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions > button {
+    min-width: 0 !important;
+    min-height: 42px !important;
+    padding: 6px 5px !important;
+    font-size: 11px !important;
+    line-height: 1.05 !important;
+    white-space: nowrap !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen .orderTopupBox {
+    grid-column: auto !important;
+    display: grid !important;
+    grid-template-columns: minmax(94px, 1fr) 72px 48px !important;
+    gap: 5px !important;
+    min-width: 0 !important;
+    align-items: stretch !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen .orderTopupAmount {
+    min-width: 0 !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen .orderTopupAmount input {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    padding: 6px 8px !important;
+    font-size: 15px !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen .orderTopupButton {
+    min-width: 0 !important;
+    min-height: 42px !important;
+    padding: 6px 4px !important;
+    font-size: 11px !important;
+    line-height: 1.05 !important;
+    white-space: nowrap !important;
+  }
+}
+
+@media (max-width: 740px) {
+  body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions {
+    grid-template-columns:
+      minmax(52px, 0.5fr)
+      minmax(66px, 0.62fr)
+      minmax(70px, 0.65fr)
+      minmax(66px, 0.62fr)
+      minmax(50px, 0.48fr)
+      minmax(190px, 1.75fr) !important;
+    gap: 4px !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen .orderTopupBox {
+    grid-template-columns: minmax(82px, 1fr) 64px 44px !important;
+    gap: 4px !important;
+  }
+
+  body[data-screen-profile="tablet_10"] .orderScreen > .orderMain > .orderBottomDock > .orderActions > button,
+  body[data-screen-profile="tablet_10"] .orderScreen .orderTopupButton {
+    font-size: 10px !important;
+    padding-left: 3px !important;
+    padding-right: 3px !important;
+  }
+}
+/* END FIX ORDER ACTIONS ONE ROW ON SMALL TABLET */

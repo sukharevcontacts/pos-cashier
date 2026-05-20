@@ -884,6 +884,9 @@ function App() {
   const [orderLoading, setOrderLoading] = useState(false)
   const [orderBalanceRefreshLoading, setOrderBalanceRefreshLoading] = useState(false)
   const lastOrderBalanceRefreshTapAtRef = useRef(0)
+  const [orderOwnerBalanceRefreshLoading, setOrderOwnerBalanceRefreshLoading] = useState(false)
+  const lastOrderOwnerBalanceRefreshTapAtRef = useRef(0)
+  const [orderHeaderCollapsed, setOrderHeaderCollapsed] = useState(false)
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const [receiptLoading, setReceiptLoading] = useState(false)
   const [receiptData, setReceiptData] = useState<OrderReceiptResponse | null>(null)
@@ -2449,6 +2452,80 @@ function App() {
     }
 
     lastOrderBalanceRefreshTapAtRef.current = now
+  }
+
+  async function refreshOrderOwnerBalance() {
+    if (!selectedStore || orderOwnerBalanceRefreshLoading) return
+
+    setOrderOwnerBalanceRefreshLoading(true)
+    setError('')
+
+    try {
+      const params = new URLSearchParams({
+        store_id: String(selectedStore.store_id),
+      })
+
+      const res = await apiFetch(`${API_BASE}/cashier/status?${params.toString()}`)
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось обновить П/С владельца ТВТ')
+      }
+
+      const data = await res.json()
+      const freshOwnerBalance = Number(data.owner_balance || 0)
+      const freshCashBalance = Number(data.cash_balance || 0)
+
+      setOwnerBalance(freshOwnerBalance)
+      setCashBalance(freshCashBalance)
+
+      setStoreState((prev) =>
+        prev
+          ? {
+              ...prev,
+              owner_balance: freshOwnerBalance,
+              cash_balance: freshCashBalance,
+            }
+          : selectedStore
+            ? {
+                store_id: selectedStore.store_id,
+                owner_account: selectedStore.owner_account || 0,
+                owner_balance: freshOwnerBalance,
+                cash_balance: freshCashBalance,
+                cash_limit: 0,
+              }
+            : prev
+      )
+
+      setOrderDetails((prev) =>
+        prev
+          ? {
+              ...prev,
+              store: {
+                ...prev.store,
+                owner_balance: freshOwnerBalance,
+                cash_balance: freshCashBalance,
+              },
+            }
+          : prev
+      )
+    } catch (e: any) {
+      setError(e.message || 'Ошибка обновления П/С владельца ТВТ')
+    } finally {
+      setOrderOwnerBalanceRefreshLoading(false)
+    }
+  }
+
+  function handleOrderOwnerBalancePointerUp() {
+    const now = Date.now()
+
+    if (now - lastOrderOwnerBalanceRefreshTapAtRef.current <= 450) {
+      lastOrderOwnerBalanceRefreshTapAtRef.current = 0
+      void refreshOrderOwnerBalance()
+      return
+    }
+
+    lastOrderOwnerBalanceRefreshTapAtRef.current = now
   }
 
   function handleShowReleasedOrdersChange(next: boolean) {
@@ -5884,7 +5961,29 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
 
         <main className="orderScreen">
           <section className="orderMain">
-            <div className="orderTop">
+            <div className={`orderTop${orderHeaderCollapsed ? ' orderTopCollapsed' : ''}`}>
+              <button
+                type="button"
+                className="orderHeaderToggleButton"
+                onClick={() => setOrderHeaderCollapsed((value) => !value)}
+                aria-expanded={!orderHeaderCollapsed}
+                title={orderHeaderCollapsed ? 'Показать информацию о заказе' : 'Скрыть информацию о заказе'}
+              >
+                {orderHeaderCollapsed ? '▾' : '▴'}
+              </button>
+
+              <div className="orderHeaderCollapsedSummary" aria-hidden={!orderHeaderCollapsed}>
+                <div className="orderHeaderCollapsedPerson">
+                  <b>{fio || `Пайщик ${order.user_account}`}</b>
+                  <span>{order.user_phone ?? '—'}</span>
+                </div>
+
+                <div className="orderHeaderCollapsedTotal">
+                  <span>{order.status_label}</span>
+                  <b>{formatMoney(order.order_sum)}</b>
+                </div>
+              </div>
+
               <div className="orderTopLeft">
                 <h2>{fio || `Пайщик ${order.user_account}`}</h2>
                 <p className="muted">
@@ -5903,8 +6002,14 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                   <span>{orderBalanceRefreshLoading ? 'Обновление...' : 'Баланс пайщика'}</span>
                   <b>{formatMoney(getVisibleOrderUserBalance(order))}</b>
                 </div>
-                <div>
-                  <span>П/С владельца ТВТ</span>
+                <div
+                  className={`orderBalanceCard${orderOwnerBalanceRefreshLoading ? ' isRefreshing' : ''}`}
+                  onPointerUp={handleOrderOwnerBalancePointerUp}
+                  role="button"
+                  tabIndex={0}
+                  title="Дважды нажмите, чтобы обновить П/С владельца ТВТ"
+                >
+                  <span>{orderOwnerBalanceRefreshLoading ? 'Обновление...' : 'П/С владельца ТВТ'}</span>
                   <b>{formatMoney(ownerBalance)}</b>
                 </div>
                 <div>
