@@ -6058,6 +6058,58 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
               >
                 Чек
               </button>
+              <div className="orderTopupBox">
+                <label className="orderTopupAmount">
+                  <span>Пополнение П/С</span>
+                  <input
+                    ref={cashTopupInputRef}
+                    value={cashTopupAmount}
+                    onChange={(e) => handleCashTopupAmountChange(e.target.value, e.currentTarget, 'main')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        if (!cashTopupConfirmOpen) {
+                          openCashTopupConfirm()
+                        }
+                      }
+                    }}
+                    onFocus={(e) => {
+                      activeCashTopupInputSourceRef.current = 'main'
+                      rememberCashTopupCaret(e.currentTarget, 'main')
+                      if (shouldUseTouchKeypad()) setMainKeypadTarget('cashTopup')
+                    }}
+                    onClick={(e) => {
+                      activeCashTopupInputSourceRef.current = 'main'
+                      rememberCashTopupCaret(e.currentTarget, 'main')
+                      if (shouldUseTouchKeypad()) setMainKeypadTarget('cashTopup')
+                    }}
+                    onKeyUp={(e) => rememberCashTopupCaret(e.currentTarget, 'main')}
+                    onSelect={(e) => rememberCashTopupCaret(e.currentTarget, 'main')}
+                    placeholder="Сумма"
+                    inputMode={shouldUseTouchKeypad() ? 'none' : 'decimal'}
+                    enterKeyHint="done"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  className="secondary orderTopupButton"
+                  onClick={openCashTopupConfirm}
+                  disabled={!foundUser || cashTopupLoading}
+                >
+                  {cashTopupLoading ? '...' : 'Пополнить'}
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary orderTopupButton"
+                  onClick={openCashQrTopup}
+                  disabled={!foundUser || sbpLoading || cashQrLoading}
+                >
+                  {sbpLoading || cashQrLoading ? 'QR...' : 'СБП'}
+                </button>
+              </div>
             </div>
 
             {orderPaymentQrDialog && (
