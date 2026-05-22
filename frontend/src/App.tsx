@@ -1918,39 +1918,6 @@ function App() {
     void unlockPromise
   }
 
-  function isRunningAsPwa() {
-    if (typeof window === 'undefined') return false
-
-    const standaloneNavigator = window.navigator as Navigator & { standalone?: boolean }
-
-    return window.matchMedia('(display-mode: standalone)').matches || standaloneNavigator.standalone === true
-  }
-
-  async function exitApplication() {
-    closeSideMenu()
-    setMainKeypadTarget(null)
-    setAppExitNoticeOpen(false)
-
-    await unlockCurrentOrderIfNeeded()
-
-    if (!isRunningAsPwa()) {
-      setAppExitNoticeOpen(true)
-      return
-    }
-
-    try {
-      window.close()
-    } catch {
-      // Браузер может запретить программное закрытие окна.
-    }
-
-    window.setTimeout(() => {
-      if (!document.hidden) {
-        setAppExitNoticeOpen(true)
-      }
-    }, 350)
-  }
-
   function renderAppExitNotice() {
     if (!appExitNoticeOpen) return null
 
@@ -2142,7 +2109,7 @@ function App() {
 
                   {appUpdateMessage && <p className="sideMenuHint appUpdateMessage">{appUpdateMessage}</p>}
                 </div>
-                <button className="secondary full sideMenuExitButton" onClick={exitApplication}>
+                <button className="secondary full sideMenuExitButton" onClick={logoutCashier}>
                   Выйти
                 </button>
               </div>
