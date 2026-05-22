@@ -523,11 +523,34 @@ function isReleasedOrderStatus(status: string | null | undefined) {
   return String(status || '').trim().toLowerCase() === 'выполнен'
 }
 
-function sortOrdersByOrderDateDesc(orders: FoundOrder[] = []) {
+function parseOrderDateValue(value: string | null | undefined) {
+  const raw = String(value || '').trim()
+  if (!raw) return 0
+
+  const parsed = Date.parse(raw)
+  if (Number.isFinite(parsed)) return parsed
+
+  const match = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/)
+  if (!match) return 0
+
+  const [, dd, mm, yyyy, hh = '00', mi = '00', ss = '00'] = match
+  const normalized = `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`
+  const fallbackParsed = Date.parse(normalized)
+  return Number.isFinite(fallbackParsed) ? fallbackParsed : 0
+}
+
+function sortOrdersByDeliveryDateDesc(orders: FoundOrder[] = []) {
   return [...orders].sort((a, b) => {
-    const aTime = Date.parse(String(a.order_date || a.date_updated || '')) || 0
-    const bTime = Date.parse(String(b.order_date || b.date_updated || '')) || 0
-    return bTime - aTime
+    const aDeliveryTime = parseOrderDateValue(a.delivery_date)
+    const bDeliveryTime = parseOrderDateValue(b.delivery_date)
+
+    if (aDeliveryTime !== bDeliveryTime) {
+      return bDeliveryTime - aDeliveryTime
+    }
+
+    const aOrderTime = parseOrderDateValue(a.order_date || a.date_updated)
+    const bOrderTime = parseOrderDateValue(b.order_date || b.date_updated)
+    return bOrderTime - aOrderTime
   })
 }
 
@@ -2300,7 +2323,7 @@ function App() {
 
       setFoundUser(data.user)
       await fetchStatus()
-      setOrders(sortOrdersByOrderDateDesc(data.orders))
+      setOrders(sortOrdersByDeliveryDateDesc(data.orders))
       setStoreState(data.store)
     } catch (e: any) {
       setFoundUser(null)
@@ -2349,7 +2372,7 @@ function App() {
         : data.user
 
     setFoundUser(nextUser)
-    setOrders(sortOrdersByOrderDateDesc(data.orders))
+    setOrders(sortOrdersByDeliveryDateDesc(data.orders))
     setStoreState(data.store)
 
     if (keepSelectedOrderNumber !== undefined) {
@@ -2560,7 +2583,7 @@ function App() {
     const data: SearchResponse = await res.json()
 
     setFoundUser(data.user)
-    setOrders(sortOrdersByOrderDateDesc(data.orders))
+    setOrders(sortOrdersByDeliveryDateDesc(data.orders))
     setStoreState(data.store)
 
     if (keepSelectedOrderNumber) {
@@ -5430,7 +5453,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
         const newBalance = Number(data.user.balance || 0)
 
         setFoundUser(data.user)
-        setOrders(sortOrdersByOrderDateDesc(data.orders))
+        setOrders(sortOrdersByDeliveryDateDesc(data.orders))
         setStoreState(data.store)
 
         if (newBalance > Number(cashQrDialog.old_balance || 0)) {
@@ -8070,7 +8093,7 @@ async function openOrder(orderNumber: number, userForBalance: FoundUser | null =
                 <div className="emptyBox">Заказы не найдены</div>
               )}
 
-              {sortOrdersByOrderDateDesc(orders).map((order) => (
+              {sortOrdersByDeliveryDateDesc(orders).map((order) => (
                 <div
                   key={order.order_number}
                   className={[

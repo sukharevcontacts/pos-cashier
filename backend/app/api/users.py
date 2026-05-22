@@ -80,7 +80,7 @@ async def search_shareholder(
                 "store_id": store_id,
                 "status": o.get("state"),
                 "order_date": o.get("datecreate"),
-                "delivery_date": None,
+                "delivery_date": o.get("deliverydateplan"),
                 "date_updated": o.get("datecreate"),
                 "order_sum": o.get("price"),
                 "status_label": o.get("state"),
